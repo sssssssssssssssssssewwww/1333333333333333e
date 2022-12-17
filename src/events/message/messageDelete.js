@@ -1,160 +1,36 @@
-const Event = require("../../structures/Event");
 const { MessageEmbed } = require("discord.js");
-require("moment-duration-format");
-const Db = require("../../packages/reactionrole/models/schema.js");
-const reactionTicket = require("../../database/models/tickets.js");
-const Logging = require("../../database/schemas/logging");
-const Snipe = require("../../database/schemas/snipe");
-const Maintenance = require("../../database/schemas/maintenance");
-module.exports = class extends Event {
-  async run(message) {
-    if (!message.guild) return;
+const { getSettings } = require("@schemas/Guild");
+const { sendMessage } = require("@utils/botUtils");
 
-    const maintenance = await Maintenance.findOne({
-      maintenance: "maintenance",
-    });
+/**
+ * @param {import('@src/structures').BotClient} client
+ * @param {import('discord.js').Message|import('discord.js').PartialMessage} message
+ */
+module.exports = async (client, message) => {
+  if (message.partial) return;
+  if (message.author.bot || !message.guild) return;
 
-    if (maintenance && maintenance.toggle == "true") return;
+  const settings = await getSettings(message.guild);
+  if (!settings.automod.anti_ghostping || !settings.modlog_channel) return;
+  const { members, roles, everyone } = message.mentions;
 
-    let snipe = await Snipe.findOne({
-      guildId: message.guild.id,
-      channel: message.channel.id,
-    });
+  // Check message if it contains mentions
+  if (members.size > 0 || roles.size > 0 || everyone) {
+    const logChannel = message.guild.channels.cache.get(settings.modlog_channel);
+    if (!logChannel) return;
 
-    const logging = await Logging.findOne({ guildId: message.guild.id });
-    if (message && message.author && !message.author.bot) {
-      if (!snipe) {
-        const snipeSave = new Snipe({
-          guildId: message.guild.id,
-          channel: message.channel.id,
-        });
+    const embed = new MessageEmbed()
+      .setAuthor({ name: "Ghost ping detected" })
+      .setDescription(
+        `**Message:**\n${message.content}\n\n` +
+          `**Author:** ${message.author.tag} \`${message.author.id}\`\n` +
+          `**Channel:** ${message.channel.toString()}`
+      )
+      .addField("Members", members.size.toString(), true)
+      .addField("Roles", roles.size.toString(), true)
+      .addField("Everyone?", everyone.toString(), true)
+      .setFooter({ text: `Sent at: ${message.createdAt}` });
 
-        snipeSave.message.push(message.content || null);
-        snipeSave.tag.push(message.author.id);
-        snipeSave.image.push(
-          message.attachments.first()
-            ? message.attachments.first().proxyURL
-            : null
-        );
-
-        snipeSave.save().catch(() => {});
-
-        snipe = await Snipe.findOne({
-          guildId: message.guild.id,
-          channel: message.channel.id,
-        });
-      } else {
-        if (snipe.message.length > 4) {
-          snipe.message.splice(-5, 1);
-          snipe.tag.splice(-5, 1);
-          snipe.image.splice(-5, 1);
-
-          snipe.message.push(message.content || null);
-          snipe.tag.push(message.author.id);
-          snipe.image.push(
-            message.attachments.first()
-              ? message.attachments.first().proxyURL
-              : null
-          );
-        } else {
-          snipe.message.push(message.content || null);
-          snipe.tag.push(message.author.id);
-          snipe.image.push(
-            message.attachments.first()
-              ? message.attachments.first().proxyURL
-              : null
-          );
-        }
-
-        snipe.save().catch(() => {});
-      }
-    }
-    if (message.webhookID || (!message.content && message.embeds.length === 0))
-      return;
-
-    let reactionDatabase = await Db.findOne({
-      guildid: message.guild.id,
-      msgid: message.id,
-    });
-
-    let ticketDatabase = await reactionTicket.findOne({
-      guildID: message.guild.id,
-      messageID: message.id,
-    });
-
-    if (reactionDatabase) {
-      const conditional = {
-        guildid: message.guild.id,
-        msgid: message.id,
-      };
-      const results = await Db.find(conditional);
-
-      if (results && results.length) {
-        for (const result of results) {
-          try {
-            await result.deleteOne();
-          } catch (e) {
-            console.log(e);
-          }
-        }
-      }
-    }
-
-    if (ticketDatabase) {
-      await ticketDatabase.deleteOne().catch(() => {});
-    }
-
-    if (logging) {
-      if (logging.message_events.toggle == "true") {
-        if (logging.message_events.ignore == "true") {
-          if (message.author.bot) return;
-        }
-
-        const channelEmbed = await message.guild.channels.cache.get(
-          logging.message_events.channel
-        );
-
-        if (channelEmbed) {
-          let color = logging.message_events.color;
-          if (color == "#000000") color = message.client.color.red;
-
-          if (logging.message_events.deleted == "true") {
-            const embed = new MessageEmbed()
-              .setAuthor(
-                `${message.author.tag} | Message Deleted`,
-                message.author.displayAvatarURL({ dynamic: true })
-              )
-              .setTimestamp()
-              .setFooter({ text: `ID: ${message.id}` })
-              .setColor(message.guild.me.displayHexColor);
-
-            if (message.content) {
-              if (message.content.length > 1024)
-                message.content = message.content.slice(0, 1021) + "...";
-
-              embed
-                .setDescription(
-                  `${message.member}'s message got deleted in ${message.channel}`
-                )
-                .addField("Message", `${message.content}`);
-            } else {
-              embed.setDescription(
-                `${message.member} deleted an **embed** in ${message.channel}`
-              );
-            }
-
-            if (
-              channelEmbed &&
-              channelEmbed.viewable &&
-              channelEmbed
-                .permissionsFor(message.guild.me)
-                .has(["SEND_MESSAGES", "EMBED_LINKS"])
-            ) {
-              channelEmbed.send({ embeds: [embed] }).catch(() => {});
-            }
-          }
-        }
-      }
-    }
+    sendMessage(logChannel, { embeds: [embed] });
   }
 };

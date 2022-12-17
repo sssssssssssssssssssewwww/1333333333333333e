@@ -1,2 +1,2 @@
 language = "nodejs"
-run = "npm start"
+run = "node_modules/.bin/node bot.js"

@@ -1,73 +1,42 @@
-const Event = require("../../structures/Event");
-const Discord = require("discord.js");
-const logger = require("../../utils/logger");
-const Guild = require("../../database/schemas/Guild");
-const Logging = require("../../database/schemas/logging");
-const config = require("../../../config.json");
-const welcomeClient = new Discord.WebhookClient({
-  url: config.webhooks.leavesPublic,
-});
-const webhookClient = new Discord.WebhookClient({
-  url: config.webhooks.leavesPrivate,
-});
-module.exports = class extends Event {
-  async run(guild) {
-    if (guild.name === undefined) return;
-    Guild.findOneAndDelete(
-      {
-        guildId: guild.id,
-      },
-      (err) => {
-        if (err) console.log(err);
-        logger.info(`Left from "${guild.name}" (${guild.id})`, {
-          label: "Guilds",
-        });
-      }
-    );
+const { MessageEmbed } = require("discord.js");
+const { getSettings } = require("@schemas/Guild");
 
-    const welcomeEmbed = new Discord.MessageEmbed()
-      .setColor(`RED`)
-      .setTitle("Leave Server")
-      .setThumbnail(`https://pogy.xyz/logo`)
-      .setDescription(`Pogy left a Server!`)
-      .addField(`Server Name`, `\`${guild.name}\``, true)
-      .addField(`Server ID`, `\`${guild.id}\``, true)
-      .setFooter({
-        text: `${this.client.guilds.cache.size} guilds `,
-        iconURL: "https://v2.pogy.xyz/logo.png",
-      });
+/**
+ * @param {import('@src/structures').BotClient} client
+ * @param {import('discord.js').Guild} guild
+ */
+module.exports = async (client, guild) => {
+  if (!guild.available) return;
+  client.logger.log(`Guild Left: ${guild.name} Members: ${guild.memberCount}`);
 
-    welcomeClient.sendCustom({
-      username: "Pogy",
-      avatarURL: "https://v2.pogy.xyz/logo.png",
-      embeds: [welcomeEmbed],
-    });
+  const settings = await getSettings(guild);
+  settings.data.leftAt = new Date();
+  await settings.save();
 
-    Logging.findOneAndDelete({
-      guildId: guild.id,
-    }).catch(() => {});
+  if (!client.joinLeaveWebhook) return;
 
-    const embed = new Discord.MessageEmbed()
-      .setColor("RED")
-      .setDescription(`I have left the ${guild.name} server.`)
-      .setFooter({
-        text: `Lost ${guild.members.cache.size - 1} members • I'm now in ${
-          this.client.guilds.cache.size
-        } servers..\n\nID: ${guild.id}`,
-      })
-      .setThumbnail(
-        guild.iconURL({ dynamic: true })
-          ? guild.iconURL({ dynamic: true })
-          : `https://guild-default-icon.herokuapp.com/${encodeURIComponent(
-              guild.name
-            )}`
-      )
-      .addField("Server Owner", `${guild.owner} / ${guild.ownerID}`);
-
-    webhookClient.sendCustom({
-      username: "Pogy",
-      avatarURL: "https://v2.pogy.xyz/logo.png",
-      embeds: [embed],
-    });
+  let ownerTag;
+  const ownerId = guild.ownerId || settings.data.owner.id;
+  try {
+    const owner = await client.users.fetch(guild.ownerId);
+    ownerTag = owner.tag;
+  } catch (err) {
+    ownerTag = settings.data.owner.tag;
   }
+
+  const embed = new MessageEmbed()
+    .setTitle("Guild Left")
+    .setThumbnail(guild.iconURL())
+    .setColor(client.config.EMBED_COLORS.ERROR)
+    .addField("Name", guild.name || "NA", false)
+    .addField("ID", guild.id, false)
+    .addField("Owner", `${ownerTag} [\`${ownerId}\`]`, false)
+    .addField("Members", `\`\`\`yaml\n${guild.memberCount}\`\`\``, false)
+    .setFooter({ text: `Guild #${client.guilds.cache.size}` });
+
+  client.joinLeaveWebhook.send({
+    username: "Leave",
+    avatarURL: client.user.displayAvatarURL(),
+    embeds: [embed],
+  });
 };

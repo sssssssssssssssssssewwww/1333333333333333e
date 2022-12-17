@@ -1,192 +1,146 @@
-const Command = require("../../structures/Command");
-const discord = require("discord.js");
-const moment = require("moment");
-const Guild = require("../../database/schemas/Guild.js");
-const { MessageEmbed } = require("discord.js");
-const warnModel = require("../../database/models/moderation.js");
-const ReactionMenu = require("../../data/ReactionMenu.js");
+const { Command } = require("@src/structures");
+const { Message, CommandInteraction, MessageEmbed } = require("discord.js");
+const { resolveMember } = require("@utils/guildUtils");
+const { getWarningLogs, clearWarningLogs } = require("@schemas/ModLog");
+const { getMember } = require("@schemas/Member");
 
-module.exports = class extends Command {
-  constructor(...args) {
-    super(...args, {
-      name: "warns",
-      aliases: ["ws", "warnings"],
-      description: "Check a certain users warnings",
-      category: "Moderation",
-      usage: "<user>",
-      examples: ["warnings @Peter"],
-      guildOnly: true,
-      botPermission: ["ADD_REACTIONS"],
+module.exports = class Warnings extends Command {
+  constructor(client) {
+    super(client, {
+      name: "warnings",
+      description: "list or clear user warnings",
+      category: "MODERATION",
       userPermissions: ["KICK_MEMBERS"],
+      command: {
+        enabled: true,
+        minArgsCount: 1,
+        subcommands: [
+          {
+            trigger: "list [member]",
+            description: "list all warnings for a user",
+          },
+          {
+            trigger: "clear <member>",
+            description: "clear all warnings for a user",
+          },
+        ],
+      },
+      slashCommand: {
+        enabled: true,
+        options: [
+          {
+            name: "list",
+            description: "list all warnings for a user",
+            type: "SUB_COMMAND",
+            options: [
+              {
+                name: "user",
+                description: "the target member",
+                type: "USER",
+                required: true,
+              },
+            ],
+          },
+          {
+            name: "clear",
+            description: "clear all warnings for a user",
+            type: "SUB_COMMAND",
+            options: [
+              {
+                name: "user",
+                description: "the target member",
+                type: "USER",
+                required: true,
+              },
+            ],
+          },
+        ],
+      },
     });
   }
 
-  async run(message, args) {
-    let client = message.client;
+  /**
+   * @param {Message} message
+   * @param {string[]} args
+   */
+  async messageRun(message, args) {
+    const sub = args[0]?.toLowerCase();
+    let response = "";
 
-    const guildDB = await Guild.findOne({
-      guildId: message.guild.id,
-    });
-    let language = require(`../../data/language/${guildDB.language}.json`);
-
-    const mentionedMember =
-      message.mentions.members.first() ||
-      message.guild.members.cache.get(args[0]) ||
-      message.member;
-
-    const warnDoc = await warnModel
-      .findOne({
-        guildID: message.guild.id,
-        memberID: mentionedMember.id,
-      })
-      .catch((err) => console.log(err));
-
-    if (!warnDoc || !warnDoc.warnings.length) {
-      return message.channel.sendCustom({
-        embeds: [
-          new discord.MessageEmbed()
-            .setAuthor(message.author.tag, message.author.avatarURL())
-            .setDescription(
-              `${message.client.emoji.fail} | **${mentionedMember.user.tag}** ${language.warningsNoError}`
-            )
-            .setTimestamp(message.createdAt)
-            .setColor(client.color.red),
-        ],
-      });
+    if (sub === "list") {
+      const target = (await resolveMember(message, args[1], true)) || message.member;
+      if (!target) return message.safeReply(`No user found matching ${args[1]}`);
+      response = await listWarnings(target, message);
     }
 
-    const data = [];
-
-    for (let i = 0; warnDoc.warnings.length > i; i++) {
-      data.push(
-        `**Moderator:** ${await message.client.users.fetch(
-          warnDoc.moderator[i]
-        )}\n**Reason:** ${warnDoc.warnings[i]}\n**Date:** ${moment(
-          warnDoc.date[i]
-        ).format("dddd, MMMM Do YYYY")}\n**Warning ID:** ${i + 1}\n`
-      );
+    //
+    else if (sub === "clear") {
+      const target = await resolveMember(message, args[1], true);
+      if (!target) return message.safeReply(`No user found matching ${args[1]}`);
+      response = await clearWarnings(target, message);
     }
 
-    const count = warnDoc.warnings.length;
-
-    const embed = new MessageEmbed()
-      .setAuthor(
-        mentionedMember.user.tag,
-        mentionedMember.user.displayAvatarURL({ dynamic: true })
-      )
-      .setFooter({
-        text: message.member.displayName,
-        iconURL: message.author.displayAvatarURL({ dynamic: true }),
-      })
-      .setTimestamp()
-      .setColor(client.color.blue);
-
-    const buildEmbed = (current, embed) => {
-      const max = count > current + 4 ? current + 4 : count;
-      let amount = 0;
-      for (let i = current; i < max; i++) {
-        if (warnDoc.warnings[i].length > 1000)
-          warnDoc.warnings[i] = warnDoc.warnings[i].slice(0, 1000) + "...";
-        embed // Build warning list
-          .addField(
-            "\u200b",
-            `**${language.warnName || "unknown"} \`#${i + 1}\`**`
-          )
-          .addField(
-            `${language.warnModerator || "unknown"}`,
-            `${message.guild.members.cache.get(warnDoc.moderator[i])}`,
-            true
-          )
-
-          .addField(
-            `${language.warnAction || "unknown"}`,
-            `${warnDoc.modType[i]}`,
-            true
-          ) //it says if its mute or warn or ban etc
-
-          .addField(
-            `${language.warnReason || "unknown"}`,
-            `${warnDoc.warnings[i]}`,
-            true
-          )
-          .addField(
-            `${language.warnID || "unknown"}`,
-            `${warnDoc.warningID[i]}`,
-            true
-          )
-          .addField(
-            `${language.warnDateIssued || "unknown"}`,
-            `${moment(warnDoc.date[i]).format("dddd, MMMM Do YYYY")}`
-          );
-        amount += 1;
-      }
-
-      return embed
-        .setTitle(`${language.warnList} [${current} - ${max}]`)
-        .setDescription(
-          `Showing \`${amount}\` of ${mentionedMember}'s \`${count}\` total warns.`
-        );
-    };
-
-    if (count < 4) return message.channel.sendCustom(buildEmbed(0, embed));
+    // else
     else {
-      let n = 0;
-      const json = embed
-        .setFooter(
-          `${language.warnExpire}\n` + message.member.displayName,
-          message.author.displayAvatarURL({ dynamic: true })
-        )
-        .toJSON();
-
-      const first = () => {
-        if (n === 0) return;
-        n = 0;
-        return buildEmbed(n, new MessageEmbed(json));
-      };
-
-      const previous = () => {
-        if (n === 0) return;
-        n -= 4;
-        if (n < 0) n = 0;
-        return buildEmbed(n, new MessageEmbed(json));
-      };
-
-      const next = () => {
-        const cap = count - (count % 4);
-        if (n === cap || n + 4 === count) return;
-        n += 4;
-        if (n >= count) n = cap;
-        return buildEmbed(n, new MessageEmbed(json));
-      };
-
-      const last = () => {
-        const cap = count - (count % 4);
-        if (n === cap || n + 4 === count) return;
-        n = cap;
-        if (n === count) n -= 4;
-        return buildEmbed(n, new MessageEmbed(json));
-      };
-
-      const reactions = {
-        "⏪": first,
-        "◀️": previous,
-        "⏹️": null,
-        "▶️": next,
-        "⏩": last,
-      };
-
-      const menu = new ReactionMenu(
-        message.client,
-        message.channel,
-        message.member,
-        buildEmbed(n, new MessageEmbed(json)),
-        null,
-        null,
-        reactions,
-        180000
-      );
-
-      menu.reactions["⏹️"] = menu.stop.bind(menu);
+      response = `Invalid subcommand ${sub}`;
     }
+
+    await message.safeReply(response);
+  }
+
+  /**
+   * @param {CommandInteraction} interaction
+   */
+  async interactionRun(interaction) {
+    const sub = interaction.options.getSubcommand();
+    let response = "";
+
+    if (sub === "list") {
+      const user = interaction.options.getUser("user");
+      const target = (await interaction.guild.members.fetch(user.id)) || interaction.member;
+      response = await listWarnings(target, interaction);
+    }
+
+    //
+    else if (sub === "clear") {
+      const user = interaction.options.getUser("user");
+      const target = await interaction.guild.members.fetch(user.id);
+      response = await clearWarnings(target, interaction);
+    }
+
+    // else
+    else {
+      response = `Invalid subcommand ${sub}`;
+    }
+
+    await interaction.followUp(response);
   }
 };
+
+async function listWarnings(target, { guildId }) {
+  if (!target) return "No user provided";
+  if (target.user.bot) return "Bots don't have warnings";
+
+  const warnings = await getWarningLogs(guildId, target.id);
+  if (!warnings.length) return `${target.user.tag} has no warnings`;
+
+  const acc = warnings.map((warning, i) => `${i + 1}. ${warning.reason} [By ${warning.admin.tag}]`).join("\n");
+  const embed = new MessageEmbed({
+    author: `${target.user.tag}'s warnings`,
+    description: acc,
+  });
+
+  return { embeds: [embed] };
+}
+
+async function clearWarnings(target, { guildId }) {
+  if (!target) return "No user provided";
+  if (target.user.bot) return "Bots don't have warnings";
+
+  const memberDb = await getMember(guildId, target.id);
+  memberDb.warnings = 0;
+  await memberDb.save();
+
+  await clearWarningLogs(guildId, target.id);
+  return `${target.user.tag}'s warnings have been cleared`;
+}

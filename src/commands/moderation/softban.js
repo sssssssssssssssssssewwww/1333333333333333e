@@ -1,174 +1,70 @@
-const Command = require("../../structures/Command");
-const { MessageEmbed } = require("discord.js");
-const Guild = require("../../database/schemas/Guild.js");
-const Logging = require("../../database/schemas/logging.js");
+const { resolveMember } = require("@root/src/utils/guildUtils");
+const { Command } = require("@src/structures");
+const { Message, CommandInteraction } = require("discord.js");
+const { softbanTarget } = require("@utils/modUtils");
 
-module.exports = class extends Command {
-  constructor(...args) {
-    super(...args, {
+module.exports = class SoftBan extends Command {
+  constructor(client) {
+    super(client, {
       name: "softban",
-      aliases: ["sb", "sban"],
-      description: "Softban the specified user from the guild",
-      category: "Moderation",
-      usage: "<user> [reason]",
-      examples: ["softban @Peter Breaking the rules"],
-      guildOnly: true,
-      botPermission: ["BAN_MEMBERS"],
-      userPermission: ["BAN_MEMBERS"],
+      description: "softban the specified member. Kicks and deletes messages",
+      category: "MODERATION",
+      botPermissions: ["BAN_MEMBERS"],
+      userPermissions: ["KICK_MEMBERS"],
+      command: {
+        enabled: true,
+        usage: "<ID|@member> [reason]",
+        minArgsCount: 1,
+      },
+      slashCommand: {
+        enabled: true,
+        options: [
+          {
+            name: "user",
+            description: "the target member",
+            type: "USER",
+            required: true,
+          },
+          {
+            name: "reason",
+            description: "reason for softban",
+            type: "STRING",
+            required: false,
+          },
+        ],
+      },
     });
   }
 
-  async run(message, args) {
-    let client = message.client;
+  /**
+   * @param {Message} message
+   * @param {string[]} args
+   */
+  async messageRun(message, args) {
+    const target = await resolveMember(message, args[0], true);
+    if (!target) return message.safeReply(`No user found matching ${args[0]}`);
+    const reason = message.content.split(args[0])[1].trim();
+    const response = await softban(message.member, target, reason);
+    await message.safeReply(response);
+  }
 
-    const logging = await Logging.findOne({ guildId: message.guild.id });
+  /**
+   * @param {CommandInteraction} interaction
+   */
+  async interactionRun(interaction) {
+    const user = interaction.options.getUser("user");
+    const reason = interaction.options.getString("reason");
+    const target = await interaction.guild.members.fetch(user.id);
 
-    const guildDB = await Guild.findOne({
-      guildId: message.guild.id,
-    });
-    const language = require(`../../data/language/${guildDB.language}.json`);
-
-    const member =
-      message.mentions.members.last() ||
-      message.guild.members.cache.get(args[0]);
-
-    if (!member)
-      return message.channel.sendCustom({
-        embeds: [
-          new MessageEmbed()
-            .setDescription(`${client.emoji.fail} | ${language.softbanNoUser}`)
-            .setColor(client.color.red),
-        ],
-      });
-
-    if (member === message.member)
-      return message.channel.sendCustom({
-        embeds: [
-          new MessageEmbed()
-            .setDescription(
-              `${client.emoji.fail} | ${language.softbanSelfUser}`
-            )
-            .setColor(client.color.red),
-        ],
-      });
-
-    if (member.roles.highest.position >= message.member.roles.highest.position)
-      return message.channel.sendCustom({
-        embeds: [
-          new MessageEmbed()
-            .setDescription(
-              `${client.emoji.fail} | ${language.softbanEqualRole}`
-            )
-            .setColor(client.color.red),
-        ],
-      });
-
-    if (!member.bannable)
-      return message.channel.sendCustom({
-        embeds: [
-          new MessageEmbed()
-            .setDescription(
-              `${client.emoji.fail} | ${language.softbanNotBannable}`
-            )
-            .setColor(client.color.red),
-        ],
-      });
-
-    let reason = args.slice(1).join(" ");
-    if (!reason) reason = language.softbanNoReason;
-    if (reason.length > 1024) reason = reason.slice(0, 1021) + "...";
-
-    await member.ban({
-      reason: `${reason} / ${language.softbanResponsible}: ${message.author.tag}`,
-      days: 7,
-    });
-    await message.guild.members.unban(
-      member.user,
-      `${reason} / ${language.softbanResponsible}: ${message.author.tag}`
-    );
-
-    const embed = new MessageEmbed()
-
-      .setDescription(
-        `${client.emoji.success} | ${language.softbanSuccess} **${
-          member.user.tag
-        }** ${
-          logging && logging.moderation.include_reason === "true"
-            ? `\n\n**Reason:** ${reason}`
-            : ``
-        }`
-      )
-      .setColor(client.color.green);
-
-    message.channel
-      .sendCustom({ embeds: [embed] })
-      .then(async (s) => {
-        if (logging && logging.moderation.delete_reply === "true") {
-          setTimeout(() => {
-            s.delete().catch(() => {});
-          }, 5000);
-        }
-      })
-      .catch(() => {});
-
-    // Update mod log
-    if (logging) {
-      if (logging.moderation.delete_after_executed === "true") {
-        message.delete().catch(() => {});
-      }
-
-      const role = message.guild.roles.cache.get(
-        logging.moderation.ignore_role
-      );
-      const channel = message.guild.channels.cache.get(
-        logging.moderation.channel
-      );
-
-      if (logging.moderation.toggle == "true") {
-        if (channel) {
-          if (message.channel.id !== logging.moderation.ignore_channel) {
-            if (
-              !role ||
-              (role &&
-                !message.member.roles.cache.find(
-                  (r) => r.name.toLowerCase() === role.name
-                ))
-            ) {
-              if (logging.moderation.ban == "true") {
-                let color = logging.moderation.color;
-                if (color == "#000000") color = message.client.color.green;
-
-                let logcase = logging.moderation.caseN;
-                if (!logcase) logcase = `1`;
-
-                let reason = args.slice(1).join(" ");
-                if (!reason) reason = `${language.noReasonProvided}`;
-                if (reason.length > 1024)
-                  reason = reason.slice(0, 1021) + "...";
-
-                const logEmbed = new MessageEmbed()
-                  .setAuthor(
-                    `Action: \`Soft Ban\` | ${member.user.tag} | Case #${logcase}`,
-                    member.user.displayAvatarURL({ format: "png" })
-                  )
-                  .addField("User", `${member}`, true)
-                  .addField("Moderator", `${message.member}`, true)
-                  .addField("Reason", `${reason}`, true)
-                  .setFooter({ text: `ID: ${member.id}` })
-                  .setTimestamp()
-                  .setColor(color);
-
-                channel.send({ embeds: [logEmbed] }).catch((e) => {
-                  console.log(e);
-                });
-
-                logging.moderation.caseN = logcase + 1;
-                await logging.save().catch(() => {});
-              }
-            }
-          }
-        }
-      }
-    }
+    const response = await softban(interaction.member, target, reason);
+    await interaction.followUp(response);
   }
 };
+
+async function softban(issuer, target, reason) {
+  const response = await softbanTarget(issuer, target, reason);
+  if (typeof response === "boolean") return `${target.user.tag} is soft-banned!`;
+  if (response === "BOT_PERM") return `I do not have permission to softban ${target.user.tag}`;
+  else if (response === "MEMBER_PERM") return `You do not have permission to softban ${target.user.tag}`;
+  else return `Failed to softban ${target.user.tag}`;
+}
