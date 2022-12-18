@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const { log, success, error } = require("../helpers/logger");
+const { log, success, error } = require("../helpers/Logger");
 
 module.exports = {
   async initializeMongoose() {
@@ -8,14 +8,13 @@ module.exports = {
     try {
       await mongoose.connect(process.env.MONGO_CONNECTION, {
         keepAlive: true,
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-        useFindAndModify: false,
       });
 
       success("Mongoose: Database connection established");
+
+      return mongoose.connection;
     } catch (err) {
-      error("Mongoose: Failed to connect to database");
+      error("Mongoose: Failed to connect to database", err);
       process.exit(1);
     }
   },
@@ -24,7 +23,7 @@ module.exports = {
     Giveaways: require("./schemas/Giveaways"),
     Guild: require("./schemas/Guild"),
     Member: require("./schemas/Member"),
-    Message: require("./schemas/Message").model,
+    ReactionRoles: require("./schemas/ReactionRoles").model,
     ModLog: require("./schemas/ModLog").model,
     TranslateLog: require("./schemas/TranslateLog").model,
     User: require("./schemas/User"),

@@ -1,9 +1,10 @@
-const { handleTicketOpen, handleTicketClose } = require("@src/handlers/ticket");
-const { approveSuggestion, rejectSuggestion } = require("@src/handlers/suggestion");
+const { getSettings } = require("@schemas/Guild");
+const { commandHandler, contextHandler, statsHandler, suggestionHandler, ticketHandler } = require("@src/handlers");
+const { InteractionType } = require("discord.js");
 
 /**
  * @param {import('@src/structures').BotClient} client
- * @param {import('discord.js').Interaction} interaction
+ * @param {import('discord.js').BaseInteraction} interaction
  */
 module.exports = async (client, interaction) => {
   if (!interaction.guild) {
@@ -12,47 +13,54 @@ module.exports = async (client, interaction) => {
       .catch(() => {});
   }
 
-  // Slash Command
-  if (interaction.isCommand()) {
-    const command = client.slashCommands.get(interaction.commandName);
-    if (command) await command.executeInteraction(interaction);
-    else return interaction.reply({ content: "An error has occurred", ephemeral: true }).catch(() => {});
+  // Slash Commands
+  if (interaction.isChatInputCommand()) {
+    await commandHandler.handleSlashCommand(interaction);
   }
 
   // Context Menu
-  else if (interaction.isContextMenu()) {
+  else if (interaction.isContextMenuCommand()) {
     const context = client.contextMenus.get(interaction.commandName);
-    if (context) await context.execute(interaction);
+    if (context) await contextHandler.handleContext(interaction, context);
     else return interaction.reply({ content: "An error has occurred", ephemeral: true }).catch(() => {});
   }
 
-  // Custom Buttons
+  // Buttons
   else if (interaction.isButton()) {
-    // ticket create
-    if (interaction.customId === "TICKET_CREATE") {
-      await interaction.deferReply({ ephemeral: true });
-      await handleTicketOpen(interaction);
-    }
+    switch (interaction.customId) {
+      case "TICKET_CREATE":
+        return ticketHandler.handleTicketOpen(interaction);
 
-    // ticket close
-    if (interaction.customId === "TICKET_CLOSE") {
-      await interaction.deferReply({ ephemeral: true });
-      await handleTicketClose(interaction);
-    }
+      case "TICKET_CLOSE":
+        return ticketHandler.handleTicketClose(interaction);
 
-    // Suggestion
-    if (interaction.customId === "SUGGEST_APPROVE") {
-      await interaction.deferReply({ ephemeral: true });
-      const response = await approveSuggestion(interaction.guild, interaction.member, interaction.message.id);
-      if (typeof response !== "boolean") interaction.followUp(response);
-      else interaction.followUp("Suggestion approved");
-    }
+      case "SUGGEST_APPROVE":
+        return suggestionHandler.handleApproveBtn(interaction);
 
-    if (interaction.customId === "SUGGEST_REJECT") {
-      await interaction.deferReply({ ephemeral: true });
-      const response = await rejectSuggestion(interaction.guild, interaction.member, interaction.message.id);
-      if (typeof response !== "boolean") interaction.followUp(response);
-      else interaction.followUp("Suggestion rejected");
+      case "SUGGEST_REJECT":
+        return suggestionHandler.handleRejectBtn(interaction);
+
+      case "SUGGEST_DELETE":
+        return suggestionHandler.handleDeleteBtn(interaction);
     }
   }
+
+  // Modals
+  else if (interaction.type === InteractionType.ModalSubmit) {
+    switch (interaction.customId) {
+      case "SUGGEST_APPROVE_MODAL":
+        return suggestionHandler.handleApproveModal(interaction);
+
+      case "SUGGEST_REJECT_MODAL":
+        return suggestionHandler.handleRejectModal(interaction);
+
+      case "SUGGEST_DELETE_MODAL":
+        return suggestionHandler.handleDeleteModal(interaction);
+    }
+  }
+
+  const settings = await getSettings(interaction.guild);
+
+  // track stats
+  if (settings.stats.enabled) statsHandler.trackInteractionStats(interaction).catch(() => {});
 };

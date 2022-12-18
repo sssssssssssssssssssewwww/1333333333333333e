@@ -1,6 +1,5 @@
-const { MessageEmbed } = require("discord.js");
+const { EmbedBuilder } = require("discord.js");
 const { getSettings } = require("@schemas/Guild");
-const { sendMessage } = require("@utils/botUtils");
 
 /**
  * @param {string} content
@@ -25,6 +24,9 @@ const parse = async (content, member, inviterData = {}) => {
         inviteData.name = "NA";
         inviteData.tag = "NA";
       }
+    } else if (member.user.bot) {
+      inviteData.name = "OAuth";
+      inviteData.tag = "OAuth";
     } else {
       inviteData.name = inviterId;
       inviteData.tag = inviterId;
@@ -34,8 +36,11 @@ const parse = async (content, member, inviterData = {}) => {
     .replaceAll(/\\n/g, "\n")
     .replaceAll(/{server}/g, member.guild.name)
     .replaceAll(/{count}/g, member.guild.memberCount)
-    .replaceAll(/{member:name}/g, member.displayName)
+    .replaceAll(/{member:nick}/g, member.displayName)
+    .replaceAll(/{member:name}/g, member.user.username)
+    .replaceAll(/{member:dis}/g, member.user.discriminator)
     .replaceAll(/{member:tag}/g, member.user.tag)
+    .replaceAll(/{member:avatar}/g, member.displayAvatarURL())
     .replaceAll(/{inviter:name}/g, inviteData.name)
     .replaceAll(/{inviter:tag}/g, inviteData.tag)
     .replaceAll(/{invites}/g, getEffectiveInvites(inviterData.invite_data));
@@ -55,12 +60,20 @@ const buildGreeting = async (member, type, config, inviterData) => {
   if (config.content) content = await parse(config.content, member, inviterData);
 
   // build embed
-  const embed = new MessageEmbed();
-  if (config.embed.description) embed.setDescription(await parse(config.embed.description, member, inviterData));
+  const embed = new EmbedBuilder();
+  if (config.embed.description) {
+    const parsed = await parse(config.embed.description, member, inviterData);
+    embed.setDescription(parsed);
+  }
   if (config.embed.color) embed.setColor(config.embed.color);
   if (config.embed.thumbnail) embed.setThumbnail(member.user.displayAvatarURL());
   if (config.embed.footer) {
-    embed.setFooter({ text: await parse(config.embed.footer, member, inviterData) });
+    const parsed = await parse(config.embed.footer, member, inviterData);
+    embed.setFooter({ text: parsed });
+  }
+  if (config.embed.image) {
+    const parsed = await parse(config.embed.image, member);
+    embed.setImage(parsed);
   }
 
   // set default message
@@ -91,7 +104,7 @@ async function sendWelcome(member, inviterData = {}) {
   // build welcome message
   const response = await buildGreeting(member, "WELCOME", config, inviterData);
 
-  sendMessage(channel, response);
+  channel.safeSend(response);
 }
 
 /**
@@ -110,7 +123,7 @@ async function sendFarewell(member, inviterData = {}) {
   // build farewell message
   const response = await buildGreeting(member, "FAREWELL", config, inviterData);
 
-  sendMessage(channel, response);
+  channel.safeSend(response);
 }
 
 module.exports = {

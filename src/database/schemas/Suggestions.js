@@ -1,14 +1,15 @@
 const mongoose = require("mongoose");
 
-const Schema = mongoose.Schema(
+const Schema = new mongoose.Schema(
   {
     guild_id: String,
-    user_id: String,
+    channel_id: String,
     message_id: String,
+    user_id: String,
     suggestion: String,
     status: {
       type: String,
-      enum: ["PENDING", "APPROVED", "REJECTED"],
+      enum: ["PENDING", "APPROVED", "REJECTED", "DELETED"],
       default: "PENDING",
     },
     stats: {
@@ -17,20 +18,22 @@ const Schema = mongoose.Schema(
     },
     status_updates: [
       {
+        _id: false,
         user_id: String,
         status: {
           type: String,
-          enum: ["PENDING", "APPROVED", "REJECTED"],
+          enum: ["APPROVED", "REJECTED", "DELETED"],
         },
-        timestamp: {
-          type: Date,
-          default: new Date(),
-        },
+        reason: String,
+        timestamp: { type: Date, default: new Date() },
       },
     ],
   },
   {
-    timestamps: true,
+    timestamps: {
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+    },
   }
 );
 
@@ -42,6 +45,7 @@ module.exports = {
   addSuggestion: async (message, userId, suggestion) => {
     return new Model({
       guild_id: message.guildId,
+      channel_id: message.channelId,
       message_id: message.id,
       user_id: userId,
       suggestion: suggestion,
@@ -50,5 +54,17 @@ module.exports = {
 
   findSuggestion: async (guildId, messageId) => {
     return Model.findOne({ guild_id: guildId, message_id: messageId });
+  },
+
+  deleteSuggestionDb: async (guildId, messageId, memberId, reason) => {
+    return Model.updateOne(
+      { guild_id: guildId, message_id: messageId },
+      {
+        status: "DELETED",
+        $push: {
+          status_updates: { user_id: memberId, status: "DELETED", reason },
+        },
+      }
+    );
   },
 };

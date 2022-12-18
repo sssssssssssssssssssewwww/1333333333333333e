@@ -1,95 +1,90 @@
-const { Command } = require("@src/structures");
-const { CommandInteraction } = require("discord.js");
 const user = require("../shared/user");
 const channelInfo = require("../shared/channel");
 const guildInfo = require("../shared/guild");
 const avatar = require("../shared/avatar");
 const emojiInfo = require("../shared/emoji");
 const botInfo = require("../shared/botstats");
+const { ApplicationCommandOptionType } = require("discord.js");
 
-module.exports = class InfoCommand extends Command {
-  constructor(client) {
-    super(client, {
-      name: "info",
-      description: "show various information",
-      category: "INFORMATION",
-      botPermissions: ["EMBED_LINKS"],
-      command: {
-        enabled: false,
-      },
-      slashCommand: {
-        enabled: true,
+/**
+ * @type {import("@structures/Command")}
+ */
+module.exports = {
+  name: "info",
+  description: "show various information",
+  category: "INFORMATION",
+  botPermissions: ["EmbedLinks"],
+  command: {
+    enabled: false,
+  },
+  slashCommand: {
+    enabled: true,
+    options: [
+      {
+        name: "user",
+        description: "get user information",
+        type: ApplicationCommandOptionType.Subcommand,
         options: [
           {
-            name: "user",
-            description: "get user information",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "name",
-                description: "name of the user",
-                type: "USER",
-                required: false,
-              },
-            ],
-          },
-          {
-            name: "channel",
-            description: "get channel information",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "name",
-                description: "name of the channel",
-                type: "CHANNEL",
-                required: false,
-              },
-            ],
-          },
-          {
-            name: "guild",
-            description: "get guild information",
-            type: "SUB_COMMAND",
-          },
-          {
-            name: "bot",
-            description: "get bot information",
-            type: "SUB_COMMAND",
-          },
-          {
-            name: "avatar",
-            description: "displays avatar information",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "name",
-                description: "name of the user",
-                type: "USER",
-                required: false,
-              },
-            ],
-          },
-          {
-            name: "emoji",
-            description: "displays emoji information",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "name",
-                description: "name of the emoji",
-                type: "STRING",
-                required: true,
-              },
-            ],
+            name: "name",
+            description: "name of the user",
+            type: ApplicationCommandOptionType.User,
+            required: false,
           },
         ],
       },
-    });
-  }
+      {
+        name: "channel",
+        description: "get channel information",
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+          {
+            name: "name",
+            description: "name of the channel",
+            type: ApplicationCommandOptionType.Channel,
+            required: false,
+          },
+        ],
+      },
+      {
+        name: "guild",
+        description: "get guild information",
+        type: ApplicationCommandOptionType.Subcommand,
+      },
+      {
+        name: "bot",
+        description: "get bot information",
+        type: ApplicationCommandOptionType.Subcommand,
+      },
+      {
+        name: "avatar",
+        description: "displays avatar information",
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+          {
+            name: "name",
+            description: "name of the user",
+            type: ApplicationCommandOptionType.User,
+            required: false,
+          },
+        ],
+      },
+      {
+        name: "emoji",
+        description: "displays emoji information",
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+          {
+            name: "name",
+            description: "name of the emoji",
+            type: ApplicationCommandOptionType.String,
+            required: true,
+          },
+        ],
+      },
+    ],
+  },
 
-  /**
-   * @param {CommandInteraction} interaction
-   */
   async interactionRun(interaction) {
     const sub = interaction.options.getSubcommand();
     if (!sub) return interaction.followUp("Not a valid subcommand");
@@ -136,5 +131,5 @@ module.exports = class InfoCommand extends Command {
     }
 
     await interaction.followUp(response);
-  }
+  },
 };

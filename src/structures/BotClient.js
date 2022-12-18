@@ -1,59 +1,61 @@
-const { Client, Collection, Intents, WebhookClient } = require("discord.js");
+const {
+  Client,
+  Collection,
+  GatewayIntentBits,
+  Partials,
+  WebhookClient,
+  ApplicationCommandType,
+} = require("discord.js");
 const path = require("path");
-const fs = require("fs");
 const { table } = require("table");
-const logger = require("../helpers/logger");
-const MusicManager = require("./MusicManager");
-const Command = require("./Command");
-const BaseContext = require("./BaseContext");
-const GiveawayManager = require("./GiveawayManager");
+const Logger = require("../helpers/Logger");
+const { recursiveReadDirSync } = require("../helpers/Utils");
+const { validateCommand, validateContext } = require("../helpers/Validator");
 const { schemas } = require("@src/database/mongoose");
+const CommandCategory = require("./CommandCategory");
+const lavaclient = require("../handlers/lavaclient");
+const giveawaysHandler = require("../handlers/giveaway");
+const { DiscordTogether } = require("discord-together");
 
 module.exports = class BotClient extends Client {
   constructor() {
     super({
       intents: [
-        Intents.FLAGS.GUILDS,
-        Intents.FLAGS.GUILD_MESSAGES,
-        Intents.FLAGS.GUILD_INVITES,
-        Intents.FLAGS.GUILD_MEMBERS,
-        Intents.FLAGS.GUILD_PRESENCES,
-        Intents.FLAGS.GUILD_MESSAGE_REACTIONS,
-        Intents.FLAGS.GUILD_VOICE_STATES,
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildInvites,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.GuildVoiceStates,
       ],
-      partials: ["USER", "MESSAGE", "REACTION"],
+      partials: [Partials.User, Partials.Message, Partials.Reaction],
       allowedMentions: {
         repliedUser: false,
       },
       restRequestTimeout: 20000,
     });
 
+    this.wait = require("util").promisify(setTimeout); // await client.wait(1000) - Wait 1 second
     this.config = require("@root/config"); // load the config file
 
     /**
-     * @type {Command[]}
+     * @type {import('@structures/Command')[]}
      */
     this.commands = []; // store actual command
     this.commandIndex = new Collection(); // store (alias, arrayIndex) pair
 
     /**
-     * @type {Collection<string, Command>}
+     * @type {Collection<string, import('@structures/Command')>}
      */
     this.slashCommands = new Collection(); // store slash commands
 
     /**
-     * @type {Collection<string, BaseContext>}
+     * @type {Collection<string, import('@structures/BaseContext')>}
      */
     this.contextMenus = new Collection(); // store contextMenus
     this.counterUpdateQueue = []; // store guildId's that needs counter update
-
-    // initialize cache
-    this.cmdCooldownCache = new Collection(); // store message cooldowns for commands
-    this.ctxCooldownCache = new Collection(); // store message cooldowns for contextMenus
-    this.xpCooldownCache = new Collection(); // store message cooldowns for xp
-    this.inviteCache = new Collection(); // store invite data for invite tracking
-    this.antiScamCache = new Collection(); // store message data for anti_scam feature
-    this.flagTranslateCache = new Collection(); // store translated messages
 
     // initialize webhook for sending guild join/leave details
     this.joinLeaveWebhook = process.env.JOIN_LEAVE_LOGS
@@ -61,43 +63,19 @@ module.exports = class BotClient extends Client {
       : undefined;
 
     // Music Player
-    this.musicManager = new MusicManager(this);
+    if (this.config.MUSIC.ENABLED) this.musicManager = lavaclient(this);
 
     // Giveaways
-    this.giveawaysManager = new GiveawayManager(this);
+    if (this.config.GIVEAWAYS.ENABLED) this.giveawaysManager = giveawaysHandler(this);
 
     // Logger
-    this.logger = logger;
+    this.logger = Logger;
 
     // Database
     this.database = schemas;
-  }
 
-  /**
-   * @param {string} directory
-   * @private
-   */
-  getAbsoluteFilePaths(directory) {
-    const filePaths = [];
-    const readCommands = (dir) => {
-      const files = fs.readdirSync(path.join(__appRoot, dir));
-      files.forEach((file) => {
-        const stat = fs.lstatSync(path.join(__appRoot, dir, file));
-        if (stat.isDirectory()) {
-          readCommands(path.join(dir, file));
-        } else {
-          const extension = path.extname(file);
-          if (extension !== ".js") {
-            this.logger.debug(`getAbsoluteFilePaths - Skipping ${file}: not a js file`);
-            return;
-          }
-          const filePath = path.join(__appRoot, dir, file);
-          filePaths.push(filePath);
-        }
-      });
-    };
-    readCommands(directory);
-    return filePaths;
+    // Discord Together
+    this.discordTogether = new DiscordTogether(this);
   }
 
   /**
@@ -109,26 +87,15 @@ module.exports = class BotClient extends Client {
     let success = 0;
     let failed = 0;
     const clientEvents = [];
-    const musicEvents = [];
 
-    this.getAbsoluteFilePaths(directory).forEach((filePath) => {
+    recursiveReadDirSync(directory).forEach((filePath) => {
       const file = path.basename(filePath);
-      const dirName = path.basename(path.dirname(filePath));
       try {
         const eventName = path.basename(file, ".js");
         const event = require(filePath);
 
-        // music events
-        if (dirName === "music") {
-          this.musicManager.on(eventName, event.bind(null, this));
-          musicEvents.push([file, "✓"]);
-        }
-
-        // bot events
-        else {
-          this.on(eventName, event.bind(null, this));
-          clientEvents.push([file, "✓"]);
-        }
+        this.on(eventName, event.bind(null, this));
+        clientEvents.push([file, "✓"]);
 
         delete require.cache[require.resolve(filePath)];
         success += 1;
@@ -149,24 +116,13 @@ module.exports = class BotClient extends Client {
       })
     );
 
-    console.log(
-      table(musicEvents, {
-        header: {
-          alignment: "center",
-          content: "Music Events",
-        },
-        singleLine: true,
-        columns: [{ width: 25 }, { width: 5, alignment: "center" }],
-      })
-    );
-
     this.logger.log(`Loaded ${success + failed} events. Success (${success}) Failed (${failed})`);
   }
 
   /**
    * Find command matching the invoke
    * @param {string} invoke
-   * @returns {Command|undefined}
+   * @returns {import('@structures/Command')|undefined}
    */
   getCommand(invoke) {
     const index = this.commandIndex.get(invoke.toLowerCase());
@@ -175,19 +131,26 @@ module.exports = class BotClient extends Client {
 
   /**
    * Register command file in the client
-   * @param {Command} cmd
+   * @param {import("@structures/Command")} cmd
    */
   loadCommand(cmd) {
-    // Command
+    // Check if category is disabled
+    if (cmd.category && CommandCategory[cmd.category]?.enabled === false) {
+      this.logger.debug(`Skipping Command ${cmd.name}. Category ${cmd.category} is disabled`);
+      return;
+    }
+    // Prefix Command
     if (cmd.command?.enabled) {
       const index = this.commands.length;
       if (this.commandIndex.has(cmd.name)) {
         throw new Error(`Command ${cmd.name} already registered`);
       }
-      cmd.command.aliases.forEach((alias) => {
-        if (this.commandIndex.has(alias)) throw new Error(`Alias ${alias} already registered`);
-        this.commandIndex.set(alias.toLowerCase(), index);
-      });
+      if (Array.isArray(cmd.command.aliases)) {
+        cmd.command.aliases.forEach((alias) => {
+          if (this.commandIndex.has(alias)) throw new Error(`Alias ${alias} already registered`);
+          this.commandIndex.set(alias.toLowerCase(), index);
+        });
+      }
       this.commandIndex.set(cmd.name.toLowerCase(), index);
       this.commands.push(cmd);
     } else {
@@ -209,17 +172,18 @@ module.exports = class BotClient extends Client {
    */
   loadCommands(directory) {
     this.logger.log(`Loading commands...`);
-    this.getAbsoluteFilePaths(directory).forEach((filePath) => {
-      const file = path.basename(filePath);
+    const files = recursiveReadDirSync(directory);
+    for (const file of files) {
       try {
-        const cmdClass = require(filePath);
-        if (!(cmdClass.prototype instanceof Command)) return;
-        const cmd = new cmdClass(this);
+        const cmd = require(file);
+        if (typeof cmd !== "object") continue;
+        validateCommand(cmd);
         this.loadCommand(cmd);
       } catch (ex) {
         this.logger.error(`Failed to load ${file} Reason: ${ex.message}`);
       }
-    });
+    }
+
     this.logger.success(`Loaded ${this.commands.length} commands`);
     this.logger.success(`Loaded ${this.slashCommands.size} slash commands`);
     if (this.slashCommands.size > 100) throw new Error("A maximum of 100 slash commands can be enabled");
@@ -231,19 +195,20 @@ module.exports = class BotClient extends Client {
    */
   loadContexts(directory) {
     this.logger.log(`Loading contexts...`);
-    this.getAbsoluteFilePaths(directory).forEach((filePath) => {
-      const file = path.basename(filePath);
+    const files = recursiveReadDirSync(directory);
+    for (const file of files) {
       try {
-        const ctxClass = require(filePath);
-        if (!(ctxClass.prototype instanceof BaseContext)) return;
-        const ctx = new ctxClass(this);
+        const ctx = require(file);
+        if (typeof ctx !== "object") continue;
+        validateContext(ctx);
         if (!ctx.enabled) return this.logger.debug(`Skipping context ${ctx.name}. Disabled!`);
         if (this.contextMenus.has(ctx.name)) throw new Error(`Context already exists with that name`);
         this.contextMenus.set(ctx.name, ctx);
       } catch (ex) {
-        this.logger.error(`Context: Failed to load ${file} Reason: ${ex.message}`);
+        this.logger.error(`Failed to load ${file} Reason: ${ex.message}`);
       }
-    });
+    }
+
     const userContexts = this.contextMenus.filter((ctx) => ctx.type === "USER").size;
     const messageContexts = this.contextMenus.filter((ctx) => ctx.type === "MESSAGE").size;
 
@@ -267,7 +232,7 @@ module.exports = class BotClient extends Client {
         .map((cmd) => ({
           name: cmd.name,
           description: cmd.description,
-          type: "CHAT_INPUT",
+          type: ApplicationCommandType.ChatInput,
           options: cmd.slashCommand.options,
         }))
         .forEach((s) => toRegister.push(s));
@@ -291,16 +256,58 @@ module.exports = class BotClient extends Client {
     // Register for a specific guild
     else if (guildId && typeof guildId === "string") {
       const guild = this.guilds.cache.get(guildId);
-      if (!guild) throw new Error(`No guilds found matching ${guildId}`);
+      if (!guild) {
+        this.logger.error(`Failed to register interactions in guild ${guildId}`, new Error("No matching guild"));
+        return;
+      }
       await guild.commands.set(toRegister);
     }
 
     // Throw an error
     else {
-      throw new Error(`Did you provide a valid guildId to register slash commands`);
+      throw new Error("Did you provide a valid guildId to register interactions");
     }
 
-    this.logger.success("Successfully registered slash commands");
+    this.logger.success("Successfully registered interactions");
+  }
+
+  /**
+   * @param {string} search
+   * @param {Boolean} exact
+   */
+  async resolveUsers(search, exact = false) {
+    if (!search || typeof search !== "string") return [];
+    const users = [];
+
+    // check if userId is passed
+    const patternMatch = search.match(/(\d{17,20})/);
+    if (patternMatch) {
+      const id = patternMatch[1];
+      const fetched = await this.users.fetch(id, { cache: true }).catch(() => {}); // check if mentions contains the ID
+      if (fetched) {
+        users.push(fetched);
+        return users;
+      }
+    }
+
+    // check if exact tag is matched in cache
+    const matchingTags = this.users.cache.filter((user) => user.tag === search);
+    if (exact && matchingTags.size === 1) users.push(matchingTags.first());
+    else matchingTags.forEach((match) => users.push(match));
+
+    // check matching username
+    if (!exact) {
+      this.users.cache
+        .filter(
+          (x) =>
+            x.username === search ||
+            x.username.toLowerCase().includes(search.toLowerCase()) ||
+            x.tag.toLowerCase().includes(search.toLowerCase())
+        )
+        .forEach((user) => users.push(user));
+    }
+
+    return users;
   }
 
   /**
@@ -310,27 +317,28 @@ module.exports = class BotClient extends Client {
     return this.generateInvite({
       scopes: ["bot", "applications.commands"],
       permissions: [
-        "ADD_REACTIONS",
-        "ATTACH_FILES",
-        "BAN_MEMBERS",
-        "CHANGE_NICKNAME",
-        "CONNECT",
-        "DEAFEN_MEMBERS",
-        "EMBED_LINKS",
-        "KICK_MEMBERS",
-        "MANAGE_CHANNELS",
-        "MANAGE_GUILD",
-        "MANAGE_MESSAGES",
-        "MANAGE_NICKNAMES",
-        "MANAGE_ROLES",
-        "MOVE_MEMBERS",
-        "MUTE_MEMBERS",
-        "PRIORITY_SPEAKER",
-        "READ_MESSAGE_HISTORY",
-        "SEND_MESSAGES",
-        "SEND_MESSAGES_IN_THREADS",
-        "SPEAK",
-        "VIEW_CHANNEL",
+        "AddReactions",
+        "AttachFiles",
+        "BanMembers",
+        "ChangeNickname",
+        "Connect",
+        "DeafenMembers",
+        "EmbedLinks",
+        "KickMembers",
+        "ManageChannels",
+        "ManageGuild",
+        "ManageMessages",
+        "ManageNicknames",
+        "ManageRoles",
+        "ModerateMembers",
+        "MoveMembers",
+        "MuteMembers",
+        "PrioritySpeaker",
+        "ReadMessageHistory",
+        "SendMessages",
+        "SendMessagesInThreads",
+        "Speak",
+        "ViewChannel",
       ],
     });
   }

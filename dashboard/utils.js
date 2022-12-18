@@ -12,8 +12,8 @@ async function fetchUser(userData, client, query) {
   if (userData.guilds) {
     userData.guilds.forEach((guild) => {
       if (guild.permissions) {
-        const perms = new Discord.Permissions(BigInt(guild.permissions));
-        if (perms.has("MANAGE_GUILD")) guild.admin = true;
+        const perms = new Discord.PermissionsBitField(BigInt(guild.permissions));
+        if (perms.has("ManageGuild")) guild.admin = true;
       }
       guild.settingsUrl = client.guilds.cache.get(guild.id)
         ? `/manage/${guild.id}/`
@@ -33,7 +33,7 @@ async function fetchUser(userData, client, query) {
   }
   const user = await client.users.fetch(userData.id);
   user.displayAvatar = user.displayAvatarURL();
-  const userDb = await getUser(user.id);
+  const userDb = await getUser(user);
   const userInfos = { ...user, ...userDb, ...userData, ...user.presence };
   return userInfos;
 }

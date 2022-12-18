@@ -1,116 +1,109 @@
-const { resolveMember } = require("@root/src/utils/guildUtils");
-const { Command } = require("@src/structures");
-const { Message, CommandInteraction } = require("discord.js");
+const { ApplicationCommandOptionType } = require("discord.js");
 const balance = require("./sub/balance");
 const deposit = require("./sub/deposit");
 const transfer = require("./sub/transfer");
 const withdraw = require("./sub/withdraw");
 
-module.exports = class BankCommand extends Command {
-  constructor(client) {
-    super(client, {
-      name: "bank",
-      description: "access to bank operations",
-      category: "ECONOMY",
-      botPermissions: ["EMBED_LINKS"],
-      command: {
-        enabled: true,
-        minArgsCount: 1,
-        subcommands: [
-          {
-            trigger: "balance",
-            description: "check your balance",
-          },
-          {
-            trigger: "deposit <coins>",
-            description: "deposit coins to your bank account",
-          },
-          {
-            trigger: "withdraw <coins>",
-            description: "withdraw coins from your bank account",
-          },
-          {
-            trigger: "transfer <user> <coins>",
-            description: "transfer coins to another user",
-          },
-        ],
+/**
+ * @type {import("@structures/Command")}
+ */
+module.exports = {
+  name: "bank",
+  description: "access to bank operations",
+  category: "ECONOMY",
+  botPermissions: ["EmbedLinks"],
+  command: {
+    enabled: true,
+    minArgsCount: 1,
+    subcommands: [
+      {
+        trigger: "balance",
+        description: "check your balance",
       },
-      slashCommand: {
-        enabled: true,
+      {
+        trigger: "deposit <coins>",
+        description: "deposit coins to your bank account",
+      },
+      {
+        trigger: "withdraw <coins>",
+        description: "withdraw coins from your bank account",
+      },
+      {
+        trigger: "transfer <user> <coins>",
+        description: "transfer coins to another user",
+      },
+    ],
+  },
+  slashCommand: {
+    enabled: true,
+    options: [
+      {
+        name: "balance",
+        description: "check your coin balance",
+        type: ApplicationCommandOptionType.Subcommand,
         options: [
           {
-            name: "balance",
-            description: "check your coin balance",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "user",
-                description: "name of the user",
-                type: "USER",
-                required: false,
-              },
-            ],
-          },
-          {
-            name: "deposit",
-            description: "deposit coins to your bank account",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "coins",
-                description: "number of coins to deposit",
-                type: "INTEGER",
-                required: true,
-              },
-            ],
-          },
-          {
-            name: "withdraw",
-            description: "withdraw coins from your bank account",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "coins",
-                description: "number of coins to withdraw",
-                type: "INTEGER",
-                required: true,
-              },
-            ],
-          },
-          {
-            name: "transfer",
-            description: "transfer coins to other user",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "user",
-                description: "the user to whom coins must be transferred",
-                type: "USER",
-                required: true,
-              },
-              {
-                name: "coins",
-                description: "the amount of coins to transfer",
-                type: "INTEGER",
-                required: true,
-              },
-            ],
+            name: "user",
+            description: "name of the user",
+            type: ApplicationCommandOptionType.User,
+            required: false,
           },
         ],
       },
-    });
-  }
+      {
+        name: "deposit",
+        description: "deposit coins to your bank account",
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+          {
+            name: "coins",
+            description: "number of coins to deposit",
+            type: ApplicationCommandOptionType.Integer,
+            required: true,
+          },
+        ],
+      },
+      {
+        name: "withdraw",
+        description: "withdraw coins from your bank account",
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+          {
+            name: "coins",
+            description: "number of coins to withdraw",
+            type: ApplicationCommandOptionType.Integer,
+            required: true,
+          },
+        ],
+      },
+      {
+        name: "transfer",
+        description: "transfer coins to other user",
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+          {
+            name: "user",
+            description: "the user to whom coins must be transferred",
+            type: ApplicationCommandOptionType.User,
+            required: true,
+          },
+          {
+            name: "coins",
+            description: "the amount of coins to transfer",
+            type: ApplicationCommandOptionType.Integer,
+            required: true,
+          },
+        ],
+      },
+    ],
+  },
 
-  /**
-   * @param {Message} message
-   * @param {string[]} args
-   */
   async messageRun(message, args) {
     const sub = args[0];
     let response;
 
     if (sub === "balance") {
-      const resolved = (await resolveMember(message, args[1])) || message.member;
+      const resolved = (await message.guild.resolveMember(args[1])) || message.member;
       response = await balance(resolved.user);
     }
 
@@ -131,7 +124,7 @@ module.exports = class BankCommand extends Command {
     //
     else if (sub === "transfer") {
       if (args.length < 3) return message.safeReply("Provide a valid user and coins to transfer");
-      const target = await resolveMember(message, args[1], true);
+      const target = await message.guild.resolveMember(args[1], true);
       if (!target) return message.safeReply("Provide a valid user to transfer coins to");
       const coins = parseInt(args[2]);
       if (isNaN(coins)) return message.safeReply("Provide a valid number of coins you wish to transfer");
@@ -144,11 +137,8 @@ module.exports = class BankCommand extends Command {
     }
 
     await message.safeReply(response);
-  }
+  },
 
-  /**
-   * @param {CommandInteraction} interaction
-   */
   async interactionRun(interaction) {
     const sub = interaction.options.getSubcommand();
     let response;
@@ -179,5 +169,5 @@ module.exports = class BankCommand extends Command {
     }
 
     await interaction.followUp(response);
-  }
+  },
 };

@@ -1,45 +1,46 @@
-const { Command } = require("@src/structures");
-const { MessageEmbed, MessageButton, MessageActionRow, CommandInteraction } = require("discord.js");
-const { timeformat } = require("@utils/miscUtils");
+const {
+  EmbedBuilder,
+  ButtonBuilder,
+  ActionRowBuilder,
+  ApplicationCommandOptionType,
+  ButtonStyle,
+} = require("discord.js");
+const { timeformat } = require("@helpers/Utils");
 const { EMBED_COLORS, SUPPORT_SERVER, DASHBOARD } = require("@root/config.js");
 const botstats = require("../shared/botstats");
 
-module.exports = class BotCommand extends Command {
-  constructor(client) {
-    super(client, {
-      name: "bot",
-      description: "bot related commands",
-      category: "INFORMATION",
-      botPermissions: ["EMBED_LINKS"],
-      command: {
-        enabled: false,
+/**
+ * @type {import("@structures/Command")}
+ */
+module.exports = {
+  name: "bot",
+  description: "bot related commands",
+  category: "INFORMATION",
+  botPermissions: ["EmbedLinks"],
+  command: {
+    enabled: false,
+  },
+  slashCommand: {
+    enabled: true,
+    options: [
+      {
+        name: "invite",
+        description: "get bot's invite",
+        type: ApplicationCommandOptionType.Subcommand,
       },
-      slashCommand: {
-        enabled: true,
-        options: [
-          {
-            name: "invite",
-            description: "get bot's invite",
-            type: "SUB_COMMAND",
-          },
-          {
-            name: "stats",
-            description: "get bot's statistics",
-            type: "SUB_COMMAND",
-          },
-          {
-            name: "uptime",
-            description: "get bot's uptime",
-            type: "SUB_COMMAND",
-          },
-        ],
+      {
+        name: "stats",
+        description: "get bot's statistics",
+        type: ApplicationCommandOptionType.Subcommand,
       },
-    });
-  }
+      {
+        name: "uptime",
+        description: "get bot's uptime",
+        type: ApplicationCommandOptionType.Subcommand,
+      },
+    ],
+  },
 
-  /**
-   * @param {CommandInteraction} interaction
-   */
   async interactionRun(interaction) {
     const sub = interaction.options.getSubcommand();
     if (!sub) return interaction.followUp("Not a valid subcommand");
@@ -65,11 +66,11 @@ module.exports = class BotCommand extends Command {
     else if (sub === "uptime") {
       await interaction.followUp(`My Uptime: \`${timeformat(process.uptime())}\``);
     }
-  }
+  },
 };
 
 function botInvite(client) {
-  const embed = new MessageEmbed()
+  const embed = new EmbedBuilder()
     .setAuthor({ name: "Invite" })
     .setColor(EMBED_COLORS.BOT_EMBED)
     .setThumbnail(client.user.displayAvatarURL())
@@ -77,16 +78,18 @@ function botInvite(client) {
 
   // Buttons
   let components = [];
-  components.push(new MessageButton().setLabel("Invite Link").setURL(client.getInvite()).setStyle("LINK"));
+  components.push(new ButtonBuilder().setLabel("Invite Link").setURL(client.getInvite()).setStyle(ButtonStyle.Link));
 
   if (SUPPORT_SERVER) {
-    components.push(new MessageButton().setLabel("Support Server").setURL(SUPPORT_SERVER).setStyle("LINK"));
+    components.push(new ButtonBuilder().setLabel("Support Server").setURL(SUPPORT_SERVER).setStyle(ButtonStyle.Link));
   }
 
   if (DASHBOARD.enabled) {
-    components.push(new MessageButton().setLabel("Dashboard Link").setURL(DASHBOARD.baseURL).setStyle("LINK"));
+    components.push(
+      new ButtonBuilder().setLabel("Dashboard Link").setURL(DASHBOARD.baseURL).setStyle(ButtonStyle.Link)
+    );
   }
 
-  let buttonsRow = new MessageActionRow().addComponents(components);
+  let buttonsRow = new ActionRowBuilder().addComponents(components);
   return { embeds: [embed], components: [buttonsRow] };
 }

@@ -1,43 +1,38 @@
-const { Command } = require("@src/structures");
-const { Message, CommandInteraction } = require("discord.js");
-const { musicValidations } = require("@utils/botUtils");
+const { musicValidations } = require("@helpers/BotUtils");
 
-module.exports = class Stop extends Command {
-  constructor(client) {
-    super(client, {
-      name: "stop",
-      description: "stop the music player",
-      category: "MUSIC",
-      validations: musicValidations,
-      command: {
-        enabled: true,
-      },
-      slashCommand: {
-        enabled: true,
-      },
-    });
-  }
+/**
+ * @type {import("@structures/Command")}
+ */
+module.exports = {
+  name: "stop",
+  description: "stop the music player",
+  category: "MUSIC",
+  validations: musicValidations,
+  command: {
+    enabled: true,
+    aliases: ["leave"],
+  },
+  slashCommand: {
+    enabled: true,
+  },
 
-  /**
-   * @param {Message} message
-   * @param {string[]} args
-   */
   async messageRun(message, args) {
-    const response = stop(message);
+    const response = await stop(message);
     await message.safeReply(response);
-  }
+  },
 
-  /**
-   * @param {CommandInteraction} interaction
-   */
   async interactionRun(interaction) {
-    const response = stop(interaction);
+    const response = await stop(interaction);
     await interaction.followUp(response);
-  }
+  },
 };
 
-function stop({ client, guildId }) {
-  const player = client.musicManager.get(guildId);
-  player.destroy();
+/**
+ * @param {import("discord.js").CommandInteraction|import("discord.js").Message} arg0
+ */
+async function stop({ client, guildId }) {
+  const player = client.musicManager.getPlayer(guildId);
+  player.disconnect();
+  await client.musicManager.destroyPlayer(guildId);
   return "🎶 The music player is stopped and queue has been cleared";
 }

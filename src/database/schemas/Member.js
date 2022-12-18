@@ -9,37 +9,28 @@ const ReqString = {
   required: true,
 };
 
-const Schema = mongoose.Schema({
-  guild_id: ReqString,
-  member_id: ReqString,
-  xp: {
-    type: Number,
-    default: 0,
+const Schema = new mongoose.Schema(
+  {
+    guild_id: ReqString,
+    member_id: ReqString,
+    strikes: { type: Number, default: 0 },
+    warnings: { type: Number, default: 0 },
+    invite_data: {
+      inviter: String,
+      code: String,
+      tracked: { type: Number, default: 0 },
+      fake: { type: Number, default: 0 },
+      left: { type: Number, default: 0 },
+      added: { type: Number, default: 0 },
+    },
   },
-  level: {
-    type: Number,
-    default: 1,
-  },
-  strikes: {
-    type: Number,
-    default: 0,
-  },
-  warnings: {
-    type: Number,
-    default: 0,
-  },
-  invite_data: {
-    inviter: String,
-    code: String,
-    tracked: { type: Number, default: 0 },
-    fake: { type: Number, default: 0 },
-    left: { type: Number, default: 0 },
-    added: { type: Number, default: 0 },
-  },
-  mute: {
-    active: Boolean,
-  },
-});
+  {
+    timestamps: {
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+    },
+  }
+);
 
 const Model = mongoose.model("members", Schema);
 
@@ -59,14 +50,6 @@ module.exports = {
     cache.add(key, member);
     return member;
   },
-
-  getXpLb: async (guildId, limit = 10) =>
-    Model.find({
-      guild_id: guildId,
-    })
-      .limit(limit)
-      .sort({ level: -1, xp: -1 })
-      .lean(),
 
   getInvitesLb: async (guildId, limit = 10) =>
     Model.aggregate([

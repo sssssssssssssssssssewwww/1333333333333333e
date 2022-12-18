@@ -1,11 +1,13 @@
-FROM node:18-alpine
+FROM node:16-alpine
 
 WORKDIR /usr/src/app
 
 COPY package*.json ./
 
-RUN npm install
+RUN npm ci --omit=dev
 
 COPY . .
 
-CMD [ "node", "index.js" ]
+EXPOSE 8080-8089 449
+
+CMD [ "node", "bot.js" ]

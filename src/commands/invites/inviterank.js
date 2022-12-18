@@ -1,75 +1,67 @@
-const { Command } = require("@src/structures");
-const { findMatchingRoles } = require("@utils/guildUtils");
-const { Message, CommandInteraction } = require("discord.js");
+const { ApplicationCommandOptionType } = require("discord.js");
 
-module.exports = class AddInvitesCommand extends Command {
-  constructor(client) {
-    super(client, {
-      name: "inviterank",
-      description: "configure invite ranks",
-      category: "INVITE",
-      userPermissions: ["MANAGE_GUILD"],
-      command: {
-        enabled: true,
-        usage: "<role-name> <invites>",
-        minArgsCount: 2,
-        subcommands: [
-          {
-            trigger: "add <role> <invites>",
-            description: "add auto-rank after reaching a particular number of invites",
-          },
-          {
-            trigger: "remove role",
-            description: "remove invite rank configured with that role",
-          },
-        ],
+/**
+ * @type {import("@structures/Command")}
+ */
+module.exports = {
+  name: "inviterank",
+  description: "configure invite ranks",
+  category: "INVITE",
+  userPermissions: ["ManageGuild"],
+  command: {
+    enabled: true,
+    usage: "<role-name> <invites>",
+    minArgsCount: 2,
+    subcommands: [
+      {
+        trigger: "add <role> <invites>",
+        description: "add auto-rank after reaching a particular number of invites",
       },
-      slashCommand: {
-        enabled: true,
-        ephemeral: true,
+      {
+        trigger: "remove role",
+        description: "remove invite rank configured with that role",
+      },
+    ],
+  },
+  slashCommand: {
+    enabled: true,
+    ephemeral: true,
+    options: [
+      {
+        name: "add",
+        description: "add a new invite rank",
+        type: ApplicationCommandOptionType.Subcommand,
         options: [
           {
-            name: "add",
-            description: "add a new invite rank",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "role",
-                description: "role to be given",
-                type: "ROLE",
-                required: true,
-              },
-              {
-                name: "invites",
-                description: "number of invites required to obtain the role",
-                type: "INTEGER",
-                required: true,
-              },
-            ],
+            name: "role",
+            description: "role to be given",
+            type: ApplicationCommandOptionType.Role,
+            required: true,
           },
           {
-            name: "remove",
-            description: "remove a previously configured invite rank",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "role",
-                description: "role with configured invite rank",
-                type: "ROLE",
-                required: true,
-              },
-            ],
+            name: "invites",
+            description: "number of invites required to obtain the role",
+            type: ApplicationCommandOptionType.Integer,
+            required: true,
           },
         ],
       },
-    });
-  }
+      {
+        name: "remove",
+        description: "remove a previously configured invite rank",
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+          {
+            name: "role",
+            description: "role with configured invite rank",
+            type: ApplicationCommandOptionType.Role,
+            required: true,
+          },
+        ],
+      },
+    ],
+  },
 
-  /**
-   * @param {Message} message
-   * @param {string[]} args
-   * @param {object} data
-   */
   async messageRun(message, args, data) {
     const sub = args[0].toLowerCase();
 
@@ -78,7 +70,7 @@ module.exports = class AddInvitesCommand extends Command {
       const invites = args[2];
 
       if (isNaN(invites)) return message.safeReply(`\`${invites}\` is not a valid number of invites?`);
-      const role = message.mentions.roles.first() || findMatchingRoles(message.guild, query)[0];
+      const role = message.guild.findMatchingRoles(query)[0];
       if (!role) return message.safeReply(`No roles found matching \`${query}\``);
 
       const response = await addInviteRank(message, role, invites, data.settings);
@@ -88,7 +80,7 @@ module.exports = class AddInvitesCommand extends Command {
     //
     else if (sub === "remove") {
       const query = args[1];
-      const role = message.mentions.roles.first() || findMatchingRoles(message.guild, query)[0];
+      const role = message.guild.findMatchingRoles(query)[0];
       if (!role) return message.safeReply(`No roles found matching \`${query}\``);
       const response = await removeInviteRank(message, role, data.settings);
       await message.safeReply(response);
@@ -98,12 +90,8 @@ module.exports = class AddInvitesCommand extends Command {
     else {
       await message.safeReply("Incorrect command usage!");
     }
-  }
+  },
 
-  /**
-   * @param {CommandInteraction} interaction
-   * @param {object} data
-   */
   async interactionRun(interaction, data) {
     const sub = interaction.options.getSubcommand();
     //
@@ -121,7 +109,7 @@ module.exports = class AddInvitesCommand extends Command {
       const response = await removeInviteRank(interaction, role, data.settings);
       await interaction.followUp(response);
     }
-  }
+  },
 };
 
 async function addInviteRank({ guild }, role, invites, settings) {

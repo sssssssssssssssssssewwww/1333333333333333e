@@ -5,11 +5,11 @@
     "baseUrl": "./",
     "paths": {
       "@root/*": ["./*"],
-      "@commands/*": ["./src/commands/*"],
-      "@features/*": ["./src/features/*"],
+      "@handlers/*": ["./src/handlers/*"],
+      "@helpers/*": ["./src/helpers/*"],
       "@schemas/*": ["./src/database/schemas/*"],
       "@src/*": ["./src/*"],
-      "@utils/*": ["./src/utils/*"]
+      "@structures/*": ["./src/structures/*"]
     }
   },
   "exclude": ["node_modules", "**/node_modules/*"]

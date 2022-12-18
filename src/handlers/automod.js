@@ -1,9 +1,21 @@
-const { MessageEmbed } = require("discord.js");
-const { sendMessage, safeDM } = require("@utils/botUtils");
-const { containsLink, containsDiscordInvite } = require("@utils/miscUtils");
+const { EmbedBuilder } = require("discord.js");
+const { containsLink, containsDiscordInvite } = require("@helpers/Utils");
 const { getMember } = require("@schemas/Member");
-const { addModAction } = require("@utils/modUtils");
-const { EMBED_COLORS } = require("@root/config");
+const { addModAction } = require("@helpers/ModUtils");
+const { AUTOMOD } = require("@root/config");
+const { addAutoModLogToDb } = require("@schemas/AutomodLogs");
+
+const antispamCache = new Map();
+const MESSAGE_SPAM_THRESHOLD = 3000;
+
+// Cleanup the cache
+setInterval(() => {
+  antispamCache.forEach((value, key) => {
+    if (Date.now() - value.timestamp > MESSAGE_SPAM_THRESHOLD) {
+      antispamCache.delete(key);
+    }
+  });
+}, 10 * 60 * 1000);
 
 /**
  * Check if the message needs to be moderated and has required permissions
@@ -13,86 +25,119 @@ const shouldModerate = (message) => {
   const { member, guild, channel } = message;
 
   // Ignore if bot cannot delete channel messages
-  if (!channel.permissionsFor(guild.me).has("MANAGE_MESSAGES")) return false;
+  if (!channel.permissionsFor(guild.members.me)?.has("ManageMessages")) return false;
 
   // Ignore Possible Guild Moderators
-  if (member.permissions.has(["KICK_MEMBERS", "BAN_MEMBERS", "MANAGE_GUILD"])) return false;
+  if (member.permissions.has(["KickMembers", "BanMembers", "ManageGuild"])) return false;
 
   // Ignore Possible Channel Moderators
-  if (channel.permissionsFor(message.member).has("MANAGE_MESSAGES")) return false;
+  if (channel.permissionsFor(message.member).has("ManageMessages")) return false;
   return true;
 };
 
 /**
  * Perform moderation on the message
  * @param {import('discord.js').Message} message
+ * @param {object} settings
  */
 async function performAutomod(message, settings) {
   const { automod } = settings;
 
+  if (automod.wh_channels.includes(message.channelId)) return;
   if (!automod.debug && !shouldModerate(message)) return;
 
-  const { channel, content, author, mentions } = message;
+  const { channel, member, guild, content, author, mentions } = message;
   const logChannel = settings.modlog_channel ? channel.guild.channels.cache.get(settings.modlog_channel) : null;
 
   let shouldDelete = false;
   let strikesTotal = 0;
 
-  const embed = new MessageEmbed();
+  const fields = [];
 
   // Max mentions
   if (mentions.members.size > automod.max_mentions) {
-    embed.addField("Mentions", `${mentions.members.size}/${automod.max_mentions}`, true);
-    strikesTotal += mentions.members.size - automod.max_mentions;
+    fields.push({ name: "Mentions", value: `${mentions.members.size}/${automod.max_mentions}`, inline: true });
+    // strikesTotal += mentions.members.size - automod.max_mentions;
+    strikesTotal += 1;
   }
 
   // Maxrole mentions
   if (mentions.roles.size > automod.max_role_mentions) {
-    embed.addField("RoleMentions", `${mentions.roles.size}/${automod.max_role_mentions}`, true);
-    strikesTotal += mentions.roles.size - automod.max_role_mentions;
+    fields.push({ name: "RoleMentions", value: `${mentions.roles.size}/${automod.max_role_mentions}`, inline: true });
+    // strikesTotal += mentions.roles.size - automod.max_role_mentions;
+    strikesTotal += 1;
+  }
+
+  if (automod.anti_massmention > 0) {
+    // check everyone mention
+    if (mentions.everyone) {
+      fields.push({ name: "Everyone Mention", value: "✓", inline: true });
+      strikesTotal += 1;
+    }
+
+    // check user/role mentions
+    if (mentions.users.size + mentions.roles.size > automod.anti_massmention) {
+      fields.push({
+        name: "User/Role Mentions",
+        value: `${mentions.users.size + mentions.roles.size}/${automod.anti_massmention}`,
+        inline: true,
+      });
+      // strikesTotal += mentions.users.size + mentions.roles.size - automod.anti_massmention;
+      strikesTotal += 1;
+    }
   }
 
   // Max Lines
   if (automod.max_lines > 0) {
     const count = content.split("\n").length;
     if (count > automod.max_lines) {
-      embed.addField("New Lines", `${count}/${automod.max_lines}`, true);
+      fields.push({ name: "New Lines", value: `${count}/${automod.max_lines}`, inline: true });
       shouldDelete = true;
-      strikesTotal += Math.ceil((count - automod.max_lines) / automod.max_lines);
+      // strikesTotal += Math.ceil((count - automod.max_lines) / automod.max_lines);
+      strikesTotal += 1;
+    }
+  }
+
+  // Anti Attachments
+  if (automod.anti_attachments) {
+    if (message.attachments.size > 0) {
+      fields.push({ name: "Attachments Found", value: "✓", inline: true });
+      shouldDelete = true;
+      strikesTotal += 1;
     }
   }
 
   // Anti links
   if (automod.anti_links) {
     if (containsLink(content)) {
-      embed.addField("Links Found", "✓", true);
+      fields.push({ name: "Links Found", value: "✓", inline: true });
       shouldDelete = true;
       strikesTotal += 1;
     }
   }
 
-  // Anti Scam
-  if (!automod.anti_links && automod.anti_scam) {
+  // Anti Spam
+  if (!automod.anti_links && automod.anti_spam) {
     if (containsLink(content)) {
-      const key = message.author.id + "|" + message.guildId;
-      if (message.client.antiScamCache.has(key)) {
-        let antiScamInfo = message.client.antiScamCache.get(key);
+      const key = author.id + "|" + message.guildId;
+      if (antispamCache.has(key)) {
+        let antispamInfo = antispamCache.get(key);
         if (
-          antiScamInfo.channelId !== message.channelId &&
-          antiScamInfo.content === content &&
-          Date.now() - antiScamInfo.timestamp < 2000
+          antispamInfo.channelId !== message.channelId &&
+          antispamInfo.content === content &&
+          Date.now() - antispamInfo.timestamp < MESSAGE_SPAM_THRESHOLD
         ) {
-          embed.addField("AntiScam Detection", "✓", true);
+          fields.push({ name: "AntiSpam Detection", value: "✓", inline: true });
           shouldDelete = true;
           strikesTotal += 1;
         }
       } else {
-        let antiScamInfo = {
+        let antispamInfo = {
           channelId: message.channelId,
           content,
           timestamp: Date.now(),
         };
-        message.client.antiScamCache.set(key, antiScamInfo);
+        antispamCache.set(key, antispamInfo);
       }
     }
   }
@@ -100,7 +145,7 @@ async function performAutomod(message, settings) {
   // Anti Invites
   if (!automod.anti_links && automod.anti_invites) {
     if (containsDiscordInvite(content)) {
-      embed.addField("Discord Invites", "✓", true);
+      fields.push({ name: "Discord Invites", value: "✓", inline: true });
       shouldDelete = true;
       strikesTotal += 1;
     }
@@ -110,45 +155,56 @@ async function performAutomod(message, settings) {
   if (shouldDelete && message.deletable) {
     message
       .delete()
-      .then(() => sendMessage(channel, "> Auto-Moderation! Message deleted", 5))
+      .then(() => channel.safeSend("> Auto-Moderation! Message deleted", 5))
       .catch(() => {});
   }
 
   if (strikesTotal > 0) {
     // add strikes to member
-    const memberDb = await getMember(message.guildId, author.id);
+    const memberDb = await getMember(guild.id, author.id);
     memberDb.strikes += strikesTotal;
 
-    // send automod log
-    embed
-      .setAuthor({ name: "Auto Moderation" })
-      .setThumbnail(author.displayAvatarURL())
-      .setColor(EMBED_COLORS.AUTOMOD)
-      .setDescription(`**Channel:** ${channel.toString()}\n**Content:**\n${content}`)
-      .setFooter({
-        text: `By ${author.tag} | ${author.id}`,
-        iconURL: author.avatarURL(),
-      });
+    // log to db
+    const reason = fields.map((field) => field.name + ": " + field.value).join("\n");
+    addAutoModLogToDb(member, content, reason, strikesTotal).catch(() => {});
 
-    sendMessage(logChannel, { embeds: [embed] });
+    // send automod log
+    if (logChannel) {
+      const logEmbed = new EmbedBuilder()
+        .setAuthor({ name: "Auto Moderation" })
+        .setThumbnail(author.displayAvatarURL())
+        .setColor(AUTOMOD.LOG_EMBED)
+        .addFields(fields)
+        .setDescription(`**Channel:** ${channel.toString()}\n**Content:**\n${content}`)
+        .setFooter({
+          text: `By ${author.tag} | ${author.id}`,
+          iconURL: author.avatarURL(),
+        });
+
+      logChannel.safeSend({ embeds: [logEmbed] });
+    }
 
     // DM strike details
-    const strikeEmbed = new MessageEmbed()
-      .setColor(EMBED_COLORS.AUTOMOD)
-      .setThumbnail(message.guild.iconURL())
+    const strikeEmbed = new EmbedBuilder()
+      .setColor(AUTOMOD.DM_EMBED)
+      .setThumbnail(guild.iconURL())
       .setAuthor({ name: "Auto Moderation" })
+      .addFields(fields)
       .setDescription(
         `You have received ${strikesTotal} strikes!\n\n` +
-          `**Guild:** ${message.guild.name}\n` +
+          `**Guild:** ${guild.name}\n` +
           `**Total Strikes:** ${memberDb.strikes} out of ${automod.strikes}`
       );
-    embed.fields.forEach((field) => strikeEmbed.addField(field.name, field.value, true));
-    safeDM(message.author, { embeds: [strikeEmbed] });
+
+    author.send({ embeds: [strikeEmbed] }).catch((ex) => {});
 
     // check if max strikes are received
     if (memberDb.strikes >= automod.strikes) {
-      await addModAction(message.guild.me, message.member, "Automod: Max strikes received", automod.action); // Add Moderation Action
-      memberDb.strikes = 0; // Reset Strikes
+      // Reset Strikes
+      memberDb.strikes = 0;
+
+      // Add Moderation Action
+      await addModAction(guild.members.me, member, "Automod: Max strikes received", automod.action).catch(() => {});
     }
 
     await memberDb.save();

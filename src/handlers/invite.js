@@ -2,6 +2,11 @@ const { Collection } = require("discord.js");
 const { getSettings } = require("@schemas/Guild");
 const { getMember } = require("@schemas/Member");
 
+const inviteCache = new Collection();
+
+const getInviteCache = (guild) => inviteCache.get(guild.id);
+const resetInviteCache = (guild) => inviteCache.delete(guild.id);
+
 const getEffectiveInvites = (inviteData = {}) =>
   inviteData.tracked + inviteData.added - inviteData.fake - inviteData.left || 0;
 
@@ -17,7 +22,7 @@ const cacheInvite = (invite, isVanity) => ({
  * @param {import("discord.js").Guild} guild
  */
 async function cacheGuildInvites(guild) {
-  if (!guild.me.permissions.has("MANAGE_GUILD")) return new Collection();
+  if (!guild.members.me.permissions.has("ManageGuild")) return new Collection();
   const invites = await guild.invites.fetch();
 
   const tempMap = new Collection();
@@ -26,7 +31,7 @@ async function cacheGuildInvites(guild) {
     tempMap.set(guild.vanityURLCode, cacheInvite(await guild.fetchVanityData(), true));
   }
 
-  guild.client.inviteCache.set(guild.id, tempMap);
+  inviteCache.set(guild.id, tempMap);
   return tempMap;
 }
 
@@ -45,10 +50,10 @@ const checkInviteRewards = async (guild, inviterData = {}, isAdded) => {
     const invites = getEffectiveInvites(inviterData.invite_data);
     settings.invite.ranks.forEach((reward) => {
       if (isAdded) {
-        if (invites + 1 >= reward.invites && !inviter.roles.cache.has(reward._id)) {
+        if (invites >= reward.invites && !inviter.roles.cache.has(reward._id)) {
           inviter.roles.add(reward._id);
         }
-      } else if (invites - 1 < reward.invites && inviter.roles.cache.has(reward._id)) {
+      } else if (invites < reward.invites && inviter.roles.cache.has(reward._id)) {
         inviter.roles.remove(reward._id);
       }
     });
@@ -62,7 +67,9 @@ const checkInviteRewards = async (guild, inviterData = {}, isAdded) => {
 async function trackJoinedMember(member) {
   const { guild } = member;
 
-  const cachedInvites = guild.client.inviteCache.get(guild.id);
+  if (member.user.bot) return {};
+
+  const cachedInvites = inviteCache.get(guild.id);
   const newInvites = await cacheGuildInvites(guild);
 
   // return if no cached data
@@ -117,6 +124,8 @@ async function trackJoinedMember(member) {
  * @param {import("discord.js").User} user
  */
 async function trackLeftMember(guild, user) {
+  if (user.bot) return {};
+
   const settings = await getSettings(guild);
   if (!settings.invite.tracking) return;
   const inviteData = (await getMember(guild.id, user.id)).invite_data;
@@ -135,6 +144,8 @@ async function trackLeftMember(guild, user) {
 }
 
 module.exports = {
+  getInviteCache,
+  resetInviteCache,
   trackJoinedMember,
   trackLeftMember,
   cacheGuildInvites,

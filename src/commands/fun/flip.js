@@ -1,61 +1,55 @@
-const { Command } = require("@src/structures");
-const { MessageEmbed, Message, CommandInteraction } = require("discord.js");
+const { EmbedBuilder, ApplicationCommandOptionType } = require("discord.js");
 const { EMBED_COLORS } = require("@root/config.js");
 
 const NORMAL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_,;.?!/\\'0123456789";
 const FLIPPED = "∀qϽᗡƎℲƃHIſʞ˥WNOԀὉᴚS⊥∩ΛMXʎZɐqɔpǝɟbɥıظʞןɯuodbɹsʇnʌʍxʎz‾'؛˙¿¡/\\,0ƖᄅƐㄣϛ9ㄥ86";
 
-module.exports = class FlipCommand extends Command {
-  constructor(client) {
-    super(client, {
-      name: "flip",
-      description: "flips a coin or message",
-      category: "FUN",
-      botPermissions: ["EMBED_LINKS"],
-      command: {
-        enabled: true,
-        minArgsCount: 1,
-        subcommands: [
-          {
-            trigger: "coin",
-            description: "flips a coin heads or tails",
-          },
-          {
-            trigger: "text <input>",
-            description: "reverses the given message",
-          },
-        ],
+/**
+ * @type {import("@structures/Command")}
+ */
+module.exports = {
+  name: "flip",
+  description: "flips a coin or message",
+  category: "FUN",
+  botPermissions: ["EmbedLinks"],
+  command: {
+    enabled: true,
+    minArgsCount: 1,
+    subcommands: [
+      {
+        trigger: "coin",
+        description: "flips a coin heads or tails",
       },
-      slashCommand: {
-        enabled: true,
+      {
+        trigger: "text <input>",
+        description: "reverses the given message",
+      },
+    ],
+  },
+  slashCommand: {
+    enabled: true,
+    options: [
+      {
+        name: "coin",
+        description: "flip a coin",
+        type: ApplicationCommandOptionType.Subcommand,
+      },
+      {
+        name: "text",
+        description: "reverses the given message",
+        type: ApplicationCommandOptionType.Subcommand,
         options: [
           {
-            name: "coin",
-            description: "flip a coin",
-            type: "SUB_COMMAND",
-          },
-          {
-            name: "text",
-            description: "reverses the given message",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "input",
-                description: "text to flip",
-                type: "STRING",
-                required: true,
-              },
-            ],
+            name: "input",
+            description: "text to flip",
+            type: ApplicationCommandOptionType.String,
+            required: true,
           },
         ],
       },
-    });
-  }
+    ],
+  },
 
-  /**
-   * @param {Message} message
-   * @param {string[]} args
-   */
   async messageRun(message, args) {
     const sub = args[0].toLowerCase();
 
@@ -85,11 +79,8 @@ module.exports = class FlipCommand extends Command {
 
     // else
     else await message.safeReply("Incorrect command usage");
-  }
+  },
 
-  /**
-   * @param {CommandInteraction} interaction
-   */
   async interactionRun(interaction) {
     const sub = interaction.options.getSubcommand("type");
 
@@ -112,16 +103,16 @@ module.exports = class FlipCommand extends Command {
       const response = await flipText(input);
       await interaction.followUp(response);
     }
-  }
+  },
 };
 
 const firstEmbed = (user) =>
-  new MessageEmbed().setColor(EMBED_COLORS.TRANSPARENT).setDescription(`${user.username}, started a coin toss`);
+  new EmbedBuilder().setColor(EMBED_COLORS.TRANSPARENT).setDescription(`${user.username}, started a coin toss`);
 
-const secondEmbed = () => new MessageEmbed().setDescription("The coin is in the air");
+const secondEmbed = () => new EmbedBuilder().setDescription("The coin is in the air");
 
 const resultEmbed = (toss) =>
-  new MessageEmbed()
+  new EmbedBuilder()
     .setDescription(`>> **${toss} Wins** <<`)
     .setImage(toss === "HEAD" ? "https://i.imgur.com/HavOS7J.png" : "https://i.imgur.com/u1pmQMV.png");
 

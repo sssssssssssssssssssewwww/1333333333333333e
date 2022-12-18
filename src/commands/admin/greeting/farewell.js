@@ -1,169 +1,177 @@
-const { Command } = require("@src/structures");
-const { isHex } = require("@utils/miscUtils");
-const { buildGreeting } = require("@src/handlers/greeting");
-const { Message, CommandInteraction } = require("discord.js");
-const { canSendEmbeds } = require("@utils/guildUtils");
-const { sendMessage } = require("@utils/botUtils");
+const { isHex } = require("@helpers/Utils");
+const { buildGreeting } = require("@handlers/greeting");
+const { ApplicationCommandOptionType, ChannelType } = require("discord.js");
 
-module.exports = class Farewell extends Command {
-  constructor(client) {
-    super(client, {
-      name: "farewell",
-      description: "setup farewell message",
-      category: "ADMIN",
-      userPermissions: ["MANAGE_GUILD"],
-      command: {
-        enabled: true,
-        minArgsCount: 1,
-        subcommands: [
-          {
-            trigger: "status <on|off>",
-            description: "enable or disable farewell message",
-          },
-          {
-            trigger: "channel <#channel>",
-            description: "configure farewell message",
-          },
-          {
-            trigger: "preview",
-            description: "preview the configured farewell message",
-          },
-          {
-            trigger: "desc <text>",
-            description: "set embed description",
-          },
-          {
-            trigger: "thumbnail <ON|OFF>",
-            description: "enable/disable embed thumbnail",
-          },
-          {
-            trigger: "color <hexcolor>",
-            description: "set embed color",
-          },
-          {
-            trigger: "footer <text>",
-            description: "set embed footer content",
-          },
-        ],
+/**
+ * @type {import("@structures/Command")}
+ */
+module.exports = {
+  name: "farewell",
+  description: "setup farewell message",
+  category: "ADMIN",
+  userPermissions: ["ManageGuild"],
+  command: {
+    enabled: true,
+    minArgsCount: 1,
+    subcommands: [
+      {
+        trigger: "status <on|off>",
+        description: "enable or disable farewell message",
       },
-      slashCommand: {
-        enabled: true,
-        ephemeral: true,
+      {
+        trigger: "channel <#channel>",
+        description: "configure farewell message",
+      },
+      {
+        trigger: "preview",
+        description: "preview the configured farewell message",
+      },
+      {
+        trigger: "desc <text>",
+        description: "set embed description",
+      },
+      {
+        trigger: "thumbnail <ON|OFF>",
+        description: "enable/disable embed thumbnail",
+      },
+      {
+        trigger: "color <hexcolor>",
+        description: "set embed color",
+      },
+      {
+        trigger: "footer <text>",
+        description: "set embed footer content",
+      },
+      {
+        trigger: "image <url>",
+        description: "set embed image",
+      },
+    ],
+  },
+  slashCommand: {
+    enabled: true,
+    ephemeral: true,
+    options: [
+      {
+        name: "status",
+        description: "enable or disable farewell message",
+        type: ApplicationCommandOptionType.Subcommand,
         options: [
           {
             name: "status",
-            description: "enable or disable farewell message",
-            type: "SUB_COMMAND",
-            options: [
+            description: "enabled or disabled",
+            required: true,
+            type: ApplicationCommandOptionType.String,
+            choices: [
               {
-                name: "status",
-                description: "enabled or disabled",
-                required: true,
-                type: "STRING",
-                choices: [
-                  {
-                    name: "ON",
-                    value: "ON",
-                  },
-                  {
-                    name: "OFF",
-                    value: "OFF",
-                  },
-                ],
+                name: "ON",
+                value: "ON",
               },
-            ],
-          },
-          {
-            name: "preview",
-            description: "preview the configured farewell message",
-            type: "SUB_COMMAND",
-          },
-          {
-            name: "channel",
-            description: "set farewell channel",
-            type: "SUB_COMMAND",
-            options: [
               {
-                name: "channel",
-                description: "channel name",
-                type: "CHANNEL",
-                channelTypes: ["GUILD_TEXT"],
-                required: true,
-              },
-            ],
-          },
-          {
-            name: "desc",
-            description: "set embed description",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "content",
-                description: "description content",
-                type: "STRING",
-                required: true,
-              },
-            ],
-          },
-          {
-            name: "thumbnail",
-            description: "configure embed thumbnail",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "status",
-                description: "thumbnail status",
-                type: "STRING",
-                required: true,
-                choices: [
-                  {
-                    name: "ON",
-                    value: "ON",
-                  },
-                  {
-                    name: "OFF",
-                    value: "OFF",
-                  },
-                ],
-              },
-            ],
-          },
-          {
-            name: "color",
-            description: "set embed color",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "hex-code",
-                description: "hex color code",
-                type: "STRING",
-                required: true,
-              },
-            ],
-          },
-          {
-            name: "footer",
-            description: "set embed footer",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "content",
-                description: "footer content",
-                type: "STRING",
-                required: true,
+                name: "OFF",
+                value: "OFF",
               },
             ],
           },
         ],
       },
-    });
-  }
+      {
+        name: "preview",
+        description: "preview the configured farewell message",
+        type: ApplicationCommandOptionType.Subcommand,
+      },
+      {
+        name: "channel",
+        description: "set farewell channel",
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+          {
+            name: "channel",
+            description: "channel name",
+            type: ApplicationCommandOptionType.Channel,
+            channelTypes: [ChannelType.GuildText],
+            required: true,
+          },
+        ],
+      },
+      {
+        name: "desc",
+        description: "set embed description",
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+          {
+            name: "content",
+            description: "description content",
+            type: ApplicationCommandOptionType.String,
+            required: true,
+          },
+        ],
+      },
+      {
+        name: "thumbnail",
+        description: "configure embed thumbnail",
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+          {
+            name: "status",
+            description: "thumbnail status",
+            type: ApplicationCommandOptionType.String,
+            required: true,
+            choices: [
+              {
+                name: "ON",
+                value: "ON",
+              },
+              {
+                name: "OFF",
+                value: "OFF",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        name: "color",
+        description: "set embed color",
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+          {
+            name: "hex-code",
+            description: "hex color code",
+            type: ApplicationCommandOptionType.String,
+            required: true,
+          },
+        ],
+      },
+      {
+        name: "footer",
+        description: "set embed footer",
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+          {
+            name: "content",
+            description: "footer content",
+            type: ApplicationCommandOptionType.String,
+            required: true,
+          },
+        ],
+      },
+      {
+        name: "image",
+        description: "set embed image",
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+          {
+            name: "url",
+            description: "image url",
+            type: ApplicationCommandOptionType.String,
+            required: true,
+          },
+        ],
+      },
+    ],
+  },
 
-  /**
-   * @param {Message} message
-   * @param {string[]} args
-   * @param {object} data
-   */
   async messageRun(message, args, data) {
     const type = args[0].toLowerCase();
     const settings = data.settings;
@@ -217,16 +225,18 @@ module.exports = class Farewell extends Command {
       response = await setFooter(settings, content);
     }
 
+    // image
+    else if (type === "image") {
+      const url = args[1];
+      if (!url) return message.safeReply("Invalid image url. Please provide a valid url");
+      response = await setImage(settings, url);
+    }
+
     //
     else response = "Invalid command usage!";
     return message.safeReply(response);
-  }
+  },
 
-  /**
-   *
-   * @param {CommandInteraction} interaction
-   * @param {object} data
-   */
   async interactionRun(interaction, data) {
     const sub = interaction.options.getSubcommand();
     const settings = data.settings;
@@ -261,12 +271,16 @@ module.exports = class Farewell extends Command {
         response = await setFooter(settings, interaction.options.getString("content"));
         break;
 
+      case "image":
+        response = await setImage(settings, interaction.options.getString("url"));
+        break;
+
       default:
         response = "Invalid subcommand";
     }
 
     return interaction.followUp(response);
-  }
+  },
 };
 
 async function sendPreview(settings, member) {
@@ -276,7 +290,7 @@ async function sendPreview(settings, member) {
   if (!targetChannel) return "No channel is configured to send farewell message";
 
   const response = await buildGreeting(member, "FAREWELL", settings.farewell);
-  await sendMessage(targetChannel, response);
+  await targetChannel.safeSend(response);
 
   return `Sent farewell preview to ${targetChannel.toString()}`;
 }
@@ -289,7 +303,7 @@ async function setStatus(settings, status) {
 }
 
 async function setChannel(settings, channel) {
-  if (!canSendEmbeds(channel)) {
+  if (!channel.canSendEmbeds()) {
     return (
       "Ugh! I cannot send greeting to that channel? I need the `Write Messages` and `Embed Links` permissions in " +
       channel.toString()
@@ -320,6 +334,12 @@ async function setColor(settings, color) {
 
 async function setFooter(settings, content) {
   settings.farewell.embed.footer = content;
+  await settings.save();
+  return "Configuration saved! Farewell message updated";
+}
+
+async function setImage(settings, url) {
+  settings.farewell.embed.image = url;
   await settings.save();
   return "Configuration saved! Farewell message updated";
 }

@@ -1,70 +1,63 @@
-const { Command } = require("@src/structures");
-const { resolveMember } = require("@utils/guildUtils");
 const { getUser } = require("@schemas/User");
-const { MessageEmbed, Message } = require("discord.js");
-const { diffHours, getRemainingTime } = require("@utils/miscUtils");
+const { EmbedBuilder, ApplicationCommandOptionType } = require("discord.js");
+const { diffHours, getRemainingTime } = require("@helpers/Utils");
 const { EMBED_COLORS } = require("@root/config");
 
-module.exports = class Reputation extends Command {
-  constructor(client) {
-    super(client, {
-      name: "rep",
-      description: "give reputation to a user",
-      category: "SOCIAL",
-      botPermissions: ["EMBED_LINKS"],
-      command: {
-        enabled: true,
-        minArgsCount: 1,
-        aliases: ["reputation"],
-        subcommands: [
-          {
-            trigger: "view [user]",
-            description: "view reputation for a user",
-          },
-          {
-            trigger: "give [user]",
-            description: "give reputation to a user",
-          },
-        ],
+/**
+ * @type {import("@structures/Command")}
+ */
+module.exports = {
+  name: "rep",
+  description: "give reputation to a user",
+  category: "SOCIAL",
+  botPermissions: ["EmbedLinks"],
+  command: {
+    enabled: true,
+    minArgsCount: 1,
+    aliases: ["reputation"],
+    subcommands: [
+      {
+        trigger: "view [user]",
+        description: "view reputation for a user",
       },
-      slashCommand: {
-        enabled: true,
+      {
+        trigger: "give [user]",
+        description: "give reputation to a user",
+      },
+    ],
+  },
+  slashCommand: {
+    enabled: true,
+    options: [
+      {
+        name: "view",
+        description: "view reputation for a user",
+        type: ApplicationCommandOptionType.Subcommand,
         options: [
           {
-            name: "view",
-            description: "view reputation for a user",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "user",
-                description: "the user to check reputation for",
-                type: "USER",
-                required: false,
-              },
-            ],
-          },
-          {
-            name: "give",
-            description: "give reputation to a user",
-            type: "SUB_COMMAND",
-            options: [
-              {
-                name: "user",
-                description: "the user to check reputation for",
-                type: "USER",
-                required: true,
-              },
-            ],
+            name: "user",
+            description: "the user to check reputation for",
+            type: ApplicationCommandOptionType.User,
+            required: false,
           },
         ],
       },
-    });
-  }
+      {
+        name: "give",
+        description: "give reputation to a user",
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+          {
+            name: "user",
+            description: "the user to check reputation for",
+            type: ApplicationCommandOptionType.User,
+            required: true,
+          },
+        ],
+      },
+    ],
+  },
 
-  /**
-   * @param {Message} message
-   * @param {string[]} args
-   */
   async messageRun(message, args) {
     const sub = args[0];
     let response;
@@ -73,7 +66,7 @@ module.exports = class Reputation extends Command {
     if (sub === "view") {
       let target = message.author;
       if (args.length > 1) {
-        const resolved = (await resolveMember(message, args[1])) || message.member;
+        const resolved = (await message.guild.resolveMember(args[1])) || message.member;
         if (resolved) target = resolved.user;
       }
       response = await viewReputation(target);
@@ -81,7 +74,7 @@ module.exports = class Reputation extends Command {
 
     // give
     else if (sub === "give") {
-      const target = await resolveMember(message, args[1]);
+      const target = await message.guild.resolveMember(args[1]);
       if (!target) return message.safeReply("Please provide a valid user to give reputation to");
       response = await giveReputation(message.author, target.user);
     }
@@ -92,7 +85,7 @@ module.exports = class Reputation extends Command {
     }
 
     await message.safeReply(response);
-  }
+  },
 
   async interactionRun(interaction) {
     const sub = interaction.options.getSubcommand();
@@ -111,19 +104,29 @@ module.exports = class Reputation extends Command {
     }
 
     await interaction.followUp(response);
-  }
+  },
 };
 
 async function viewReputation(target) {
-  const userData = await getUser(target.id);
+  const userData = await getUser(target);
   if (!userData) return `${target.tag} has no reputation yet`;
 
-  const embed = new MessageEmbed()
+  const embed = new EmbedBuilder()
     .setAuthor({ name: `Reputation for ${target.username}` })
     .setColor(EMBED_COLORS.BOT_EMBED)
     .setThumbnail(target.displayAvatarURL())
-    .addField("Given", userData.reputation?.given.toString(), true)
-    .addField("Received", userData.reputation?.received.toString(), true);
+    .addFields(
+      {
+        name: "Given",
+        value: userData.reputation?.given.toString(),
+        inline: true,
+      },
+      {
+        name: "Received",
+        value: userData.reputation?.received.toString(),
+        inline: true,
+      }
+    );
 
   return { embeds: [embed] };
 }
@@ -132,7 +135,7 @@ async function giveReputation(user, target) {
   if (target.bot) return "You cannot give reputation to bots";
   if (target.id === user.id) return "You cannot give reputation to yourself";
 
-  const userData = await getUser(user.id);
+  const userData = await getUser(user);
   if (userData && userData.reputation.timestamp) {
     const lastRep = new Date(userData.reputation.timestamp);
     const diff = diffHours(new Date(), lastRep);
@@ -142,7 +145,7 @@ async function giveReputation(user, target) {
     }
   }
 
-  const targetData = await getUser(target.id);
+  const targetData = await getUser(target);
 
   userData.reputation.given += 1;
   userData.reputation.timestamp = new Date();
@@ -151,7 +154,7 @@ async function giveReputation(user, target) {
   await userData.save();
   await targetData.save();
 
-  const embed = new MessageEmbed()
+  const embed = new EmbedBuilder()
     .setColor(EMBED_COLORS.BOT_EMBED)
     .setDescription(`${target.toString()} +1 Rep!`)
     .setFooter({ text: `By ${user.tag}` })

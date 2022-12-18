@@ -1,4 +1,4 @@
-const { MessageEmbed } = require("discord.js");
+const { EmbedBuilder } = require("discord.js");
 const { getUser } = require("@schemas/User");
 const { ECONOMY, EMBED_COLORS } = require("@root/config");
 
@@ -7,7 +7,7 @@ module.exports = async (self, target, coins) => {
   if (target.bot) return "You cannot transfer coins to bots!";
   if (target.id === self.id) return "You cannot transfer coins to self!";
 
-  const userDb = await getUser(self.id);
+  const userDb = await getUser(self);
 
   if (userDb.bank < coins) {
     return `Insufficient bank balance! You only have ${userDb.bank}${ECONOMY.CURRENCY} in your bank account.${
@@ -15,7 +15,7 @@ module.exports = async (self, target, coins) => {
     } `;
   }
 
-  const targetDb = await getUser(target.id);
+  const targetDb = await getUser(target);
 
   userDb.bank -= coins;
   targetDb.bank += coins;
@@ -23,7 +23,7 @@ module.exports = async (self, target, coins) => {
   await userDb.save();
   await targetDb.save();
 
-  const embed = new MessageEmbed()
+  const embed = new EmbedBuilder()
     .setColor(EMBED_COLORS.BOT_EMBED)
     .setAuthor({ name: "Updated Balance" })
     .setDescription(`You have successfully transferred ${coins}${ECONOMY.CURRENCY} to ${target.tag}`)

@@ -1,55 +1,46 @@
-const { Command } = require("@src/structures");
-const { MessageEmbed, Message, CommandInteraction } = require("discord.js");
+const { EmbedBuilder, ApplicationCommandOptionType } = require("discord.js");
 const { getUser } = require("@schemas/User");
 const { EMBED_COLORS, ECONOMY } = require("@root/config.js");
-const { getRandomInt } = require("@utils/miscUtils");
+const { getRandomInt } = require("@helpers/Utils");
 
-module.exports = class Gamble extends Command {
-  constructor(client) {
-    super(client, {
-      name: "gamble",
-      description: "try your luck by gambling",
-      category: "ECONOMY",
-      botPermissions: ["EMBED_LINKS"],
-      command: {
-        enabled: true,
-        usage: "<amount>",
-        minArgsCount: 1,
-        aliases: ["slot"],
+/**
+ * @type {import("@structures/Command")}
+ */
+module.exports = {
+  name: "gamble",
+  description: "try your luck by gambling",
+  category: "ECONOMY",
+  botPermissions: ["EmbedLinks"],
+  command: {
+    enabled: true,
+    usage: "<amount>",
+    minArgsCount: 1,
+    aliases: ["slot"],
+  },
+  slashCommand: {
+    enabled: true,
+    options: [
+      {
+        name: "coins",
+        description: "number of coins to bet",
+        required: true,
+        type: ApplicationCommandOptionType.Integer,
       },
-      slashCommand: {
-        enabled: true,
-        options: [
-          {
-            name: "coins",
-            description: "number of coins to bet",
-            required: true,
-            type: "INTEGER",
-          },
-        ],
-      },
-    });
-  }
+    ],
+  },
 
-  /**
-   * @param {Message} message
-   * @param {string[]} args
-   */
   async messageRun(message, args) {
     const betAmount = parseInt(args[0]);
     if (isNaN(betAmount)) return message.safeReply("Bet amount needs to be a valid number input");
     const response = await gamble(message.author, betAmount);
     await message.safeReply(response);
-  }
+  },
 
-  /**
-   * @param {CommandInteraction} interaction
-   */
   async interactionRun(interaction) {
     const betAmount = interaction.options.getInteger("coins");
     const response = await gamble(interaction.user, betAmount);
     await interaction.followUp(response);
-  }
+  },
 };
 
 function getEmoji() {
@@ -89,7 +80,7 @@ async function gamble(user, betAmount) {
   if (betAmount < 0) return "Bet amount cannot be negative";
   if (betAmount < 10) return "Bet amount cannot be less than 10";
 
-  const userDb = await getUser(user.id);
+  const userDb = await getUser(user);
   if (userDb.coins < betAmount)
     return `You do not have sufficient coins to gamble!\n**Coin balance:** ${userDb.coins || 0}${ECONOMY.CURRENCY}`;
 
@@ -116,7 +107,7 @@ async function gamble(user, betAmount) {
   userDb.coins += balance;
   await userDb.save();
 
-  const embed = new MessageEmbed()
+  const embed = new EmbedBuilder()
     .setAuthor({ name: user.username, iconURL: user.displayAvatarURL() })
     .setColor(EMBED_COLORS.TRANSPARENT)
     .setThumbnail("https://i.pinimg.com/originals/9a/f1/4e/9af14e0ae92487516894faa9ea2c35dd.gif")

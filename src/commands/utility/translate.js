@@ -1,7 +1,6 @@
-const { MessageEmbed, Message, CommandInteraction } = require("discord.js");
-const { Command } = require("@src/structures");
+const { EmbedBuilder, ApplicationCommandOptionType } = require("discord.js");
 const { EMBED_COLORS } = require("@root/config.js");
-const { translate } = require("@utils/httpUtils");
+const { translate } = require("@helpers/HttpUtils");
 const { GOOGLE_TRANSLATE } = require("@src/data.json");
 
 // Discord limits to a maximum of 25 choices for slash command
@@ -9,47 +8,42 @@ const { GOOGLE_TRANSLATE } = require("@src/data.json");
 
 const choices = ["ar", "cs", "de", "en", "fa", "fr", "hi", "hr", "it", "ja", "ko", "la", "nl", "pl", "ta", "te"];
 
-module.exports = class TranslateCommand extends Command {
-  constructor(client) {
-    super(client, {
-      name: "translate",
-      description: "translate from one language to other",
-      cooldown: 20,
-      category: "UTILITY",
-      botPermissions: ["EMBED_LINKS"],
-      command: {
-        enabled: true,
-        aliases: ["tr"],
-        usage: "<iso-code> <message>",
-        minArgsCount: 2,
+/**
+ * @type {import("@structures/Command")}
+ */
+module.exports = {
+  name: "translate",
+  description: "translate from one language to other",
+  cooldown: 20,
+  category: "UTILITY",
+  botPermissions: ["EmbedLinks"],
+  command: {
+    enabled: true,
+    aliases: ["tr"],
+    usage: "<iso-code> <message>",
+    minArgsCount: 2,
+  },
+  slashCommand: {
+    enabled: true,
+    options: [
+      {
+        name: "language",
+        description: "translation language",
+        type: ApplicationCommandOptionType.String,
+        required: true,
+        choices: choices.map((choice) => ({ name: GOOGLE_TRANSLATE[choice], value: choice })),
       },
-      slashCommand: {
-        enabled: true,
-        options: [
-          {
-            name: "language",
-            description: "translation language",
-            type: "STRING",
-            required: true,
-            choices: choices.map((choice) => ({ name: GOOGLE_TRANSLATE[choice], value: choice })),
-          },
-          {
-            name: "text",
-            description: "the text that requires translation",
-            type: "STRING",
-            required: true,
-          },
-        ],
+      {
+        name: "text",
+        description: "the text that requires translation",
+        type: ApplicationCommandOptionType.String,
+        required: true,
       },
-    });
-  }
+    ],
+  },
 
-  /**
-   * @param {Message} message
-   * @param {string[]} args
-   */
   async messageRun(message, args) {
-    let embed = new MessageEmbed();
+    let embed = new EmbedBuilder();
     const outputCode = args.shift();
 
     if (!GOOGLE_TRANSLATE[outputCode]) {
@@ -66,24 +60,21 @@ module.exports = class TranslateCommand extends Command {
 
     const response = await getTranslation(message.author, input, outputCode);
     await message.safeReply(response);
-  }
+  },
 
-  /**
-   * @param {CommandInteraction} interaction
-   */
   async interactionRun(interaction) {
     const outputCode = interaction.options.getString("language");
     const input = interaction.options.getString("text");
     const response = await getTranslation(interaction.user, input, outputCode);
     await interaction.followUp(response);
-  }
+  },
 };
 
 async function getTranslation(author, input, outputCode) {
   const data = await translate(input, outputCode);
   if (!data) return "Failed to translate your text";
 
-  const embed = new MessageEmbed()
+  const embed = new EmbedBuilder()
     .setAuthor({
       name: `${author.username} says`,
       iconURL: author.avatarURL(),
